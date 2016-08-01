@@ -916,12 +916,63 @@ void smbios_entry_add(QemuOpts *opts, Error **errp)
             exit(1);
         }
 
-        if (test_bit(header->type, have_fields_bitmap)) {
-            error_report("can't load type %d struct, fields already specified!",
-                         header->type);
-            exit(1);
-        }
-        set_bit(header->type, have_binfile_bitmap);
+        if (memcmp(data + 0x10, "_DMI_", 5) == 0)
+            buf = data + 32;
+        else
+            buf = data;
+
+        /* The following code referenced the dmi_table() in dmidecode source code. */
+        while (buf + 4 < data + size) {
+            uint8_t *next = NULL;
+            struct smbios_structure_header *header, *target;
+            int e_size = 0;
+
+            header = (struct smbios_structure_header *)buf;
+
+            if (header->length < 4) {
+                error_report("Invalid entry length (%u)\n", header->length);
+            }
+
+            if (header->type == 127)
+                break;
+
+            /* Look for the next handle */
+            next = buf + header->length;
+            while (next - buf + 1 < size && (next[0] != 0 || next[1] != 0))
+                next++;
+            next += 2;
+
+            if (header->type == 38) {
+                buf = next;
+                continue;
+            }
+
+            if (header->type == 1 && qemu_uuid_set) {
+                smbios_encode_uuid((struct smbios_uuid *)(buf + 8), qemu_uuid);
+            }
+
+            e_size = next - buf;
+            /*
+             * NOTE: standard double '\0' terminator expected, per smbios spec.
+             * (except in legacy mode, where the second '\0' is implicit and
+             *  will be inserted by the BIOS).
+             */
+            smbios_tables = g_realloc(smbios_tables, smbios_tables_len + e_size);
+            target = (struct smbios_structure_header *)(smbios_tables +
+                                                        smbios_tables_len);
+
+            memcpy(target, buf, e_size);
+            /* Add to smbios table */
+            if (test_bit(header->type, have_fields_bitmap)) {
+                error_report("can't load type %d struct, fields already specified!",
+                             header->type);
+                exit(1);
+            }
+            set_bit(target->type, have_binfile_bitmap);
+
+            if (target->type == 4) {
+                smbios_type4_count++;
+            }
 
         if (header->type == 4) {
             smbios_type4_count++;

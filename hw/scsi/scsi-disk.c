@@ -570,11 +570,179 @@ static uint8_t *scsi_get_buf(SCSIRequest *req)
     return (uint8_t *)r->iov.iov_base;
 }
 
+/* TODO: Follow EMC SES-2 v 2.07, hardcode as Tabasco DAE */
+static int scsi_enclosure_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
+{
+    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, req->dev);
+    int buflen = 0;
+    int start;
+
+    if (req->cmd.buf[1] & 0x1) {
+        /* EVPD == 1 */
+        uint8_t page_code = req->cmd.buf[2];
+
+        outbuf[buflen++] = s->qdev.type & 0x1f;
+        outbuf[buflen++] = page_code ; // this page
+        outbuf[buflen++] = 0x00;
+        outbuf[buflen++] = 0x00;
+        start = buflen;
+
+        switch (page_code) {
+        case 0x00: /* Supported page codes, mandatory */
+        {
+            DPRINTF("Inquiry EVPD[Supported pages] "
+                    "buffer size %zd\n", req->cmd.xfer);
+            outbuf[buflen++] = 0x00; // list of supported pages (this page)
+            outbuf[buflen++] = 0x80; // unit serial number
+            outbuf[buflen++] = 0x83; // device identification
+            outbuf[buflen++] = 0x86; // extended Inquiry
+            // subenclosure-specific (C0h~DFh)
+            outbuf[buflen++] = 0xC0;
+            outbuf[buflen++] = 0xC1;
+            outbuf[buflen++] = 0xC2;
+            outbuf[buflen++] = 0xC3;
+            outbuf[buflen++] = 0xC4;
+            outbuf[buflen++] = 0xC5;
+            outbuf[buflen++] = 0xC6;
+            outbuf[buflen++] = 0xC7;
+            break;
+        }
+        case 0x80:
+        {
+            const char *serial = "500604810b18f57e";
+            DPRINTF("Inquiry EVPD[Serial number] buffer size %zd\n", req->cmd.xfer);
+            memcpy(outbuf+buflen, serial, strlen(serial));
+            buflen += strlen(serial)+1; // pad '\0'
+            break;
+        }
+        case 0x83:
+        {
+            const uint64_t sas_addr_0 = 0x50060480E3FAAA09;
+            const uint64_t sas_addr_1 = 0x500604810B18F57E;
+
+            DPRINTF("Inquiry EVPD[Device identification] buffer size %zd\n", req->cmd.xfer);
+
+            // first designation descriptor: logical unit id
+            outbuf[buflen++] = 0x01; // Binary
+            outbuf[buflen++] = 0x03; // PIV: 0b, ASSOC: 00b, desigtype: 03h
+            outbuf[buflen++] = 0x00; // reserved
+            outbuf[buflen++] = 8;
+            *(uint64_t*)&outbuf[buflen] = cpu_to_be64(sas_addr_0);
+            buflen += 8;
+
+            // second designation descriptor: target port id
+            outbuf[buflen++] = 0x61; // binary, proto id 6h
+            outbuf[buflen++] = 0x93; // PIV: 1b, ASSOC: 01b, desigtype: 03h
+            outbuf[buflen++] = 0x00; // reserved
+            outbuf[buflen++] = 8;
+            *(uint64_t*)&outbuf[buflen] = cpu_to_be64(sas_addr_1);
+            buflen += 8;
+
+            // third designation descriptor: relative target port id
+            outbuf[buflen++] = 0x61; // binary, proto id 6h
+            outbuf[buflen++] = 0x94; // PIV: 1b, ASSOC: 01b, desigtype: 03h
+            outbuf[buflen++] = 0x00; // reserved
+            outbuf[buflen++] = 4;
+            outbuf[buflen++] = 0;
+            outbuf[buflen++] = 0;
+            outbuf[buflen++] = 0;
+            outbuf[buflen++] = 1;
+
+            break;
+        }
+        case 0x86:
+        {
+            //outbuf[3] = 0x3C;
+            outbuf[5] = 0x01; // SIMPSUP: 1b
+            buflen = 64;
+            break;
+        }
+        default:
+            DPRINTF("Inquiry EVPD[page 0x%x]: not supported\n", page_code);
+            return -1;
+        }
+        outbuf[start - 1] = buflen - start;
+        return buflen;
+    }
+
+    /* Standard INQUIRY data */
+    if (req->cmd.buf[2] != 0) {
+        return -1;
+    }
+
+    /* PAGE CODE == 0 */
+    buflen = req->cmd.xfer;
+    if (buflen > SCSI_MAX_INQUIRY_LEN) {
+        buflen = SCSI_MAX_INQUIRY_LEN;
+    }
+
+    outbuf[0] = s->qdev.type & 0x1f;
+    outbuf[1] = 0;
+
+    /*
+     * We claim conformance to SPC-3, which is required for guests
+     * to ask for modern features like READ CAPACITY(16) or the
+     * block characteristics VPD page by default.  Not all of SPC-3
+     * is actually implemented, but we're good enough.
+     */
+    outbuf[2] = 6;
+    outbuf[3] = 2 | 0x10; /* Format 2, HiSup */
+
+    outbuf[6] = 0xD0; /* BQue | EncServ | Multip */
+    /* Sync data transfer and TCQ.  */
+    outbuf[7] = 0x02; /* CMDQue */
+
+    /* 8-15: T10 vendor ID */
+    strpadcpy((char *) &outbuf[8], 8, "EMC", ' ');
+    /* 16-31: product ID */
+    strpadcpy((char *) &outbuf[16], 16, "ESES Enclosure", ' ');
+    /* 32-35: product revision level, in ascii */
+    strpadcpy((char *) &outbuf[32], 4, "0001", '0');
+
+    if (buflen > 36) {
+        outbuf[4] = buflen - 5; /* Additional Length = (Len - 1) - 4 */
+    } else {
+        /* If the allocation length of CDB is too small,
+           the additional length is not adjusted */
+        outbuf[4] = 36 - 5;
+        return buflen;
+    }
+
+    /*  component vendor ID: 'PMCSIERA' */
+    if (s->serial) {
+        memcpy(&outbuf[36], s->serial, strlen(s->serial));
+    }
+    /*  component ID: 0x8054, SXP36X12G chip */
+    outbuf[44] = 0x80;
+    outbuf[45] = 0x54;
+    /* component revision level */
+    outbuf[46] = 0x02;
+
+    *(uint16_t*)&outbuf[58] = cpu_to_be16(0x00A0); /* SAM-5 */
+    *(uint16_t*)&outbuf[60] = cpu_to_be16(0x0C20); /* SAS-2 */
+    *(uint16_t*)&outbuf[62] = cpu_to_be16(0x0460); /* SPC-4 */
+    *(uint16_t*)&outbuf[64] = cpu_to_be16(0x0580); /* SES-3 */
+
+    *(uint16_t*)&outbuf[112] = cpu_to_be16(0x0017); /* enclosure platform type: Tabasco */
+    *(uint16_t*)&outbuf[114] = cpu_to_be16(0x0014); /* enclosure board type: Tabasco */
+
+    *(uint16_t*)&outbuf[118] = cpu_to_be16(0x0002); /* eses version descriptor */
+
+    strpadcpy((char*)&outbuf[120], 16, "CF2CY162200291", '\0'); /* enclosure unique id */
+
+    return buflen;
+}
+
 static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
 {
     SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, req->dev);
     int buflen = 0;
     int start;
+
+    if (s->qdev.type == TYPE_ENCLOSURE) {
+        buflen = scsi_enclosure_emulate_inquiry(req, outbuf);
+        return buflen;
+    }
 
     if (req->cmd.buf[1] & 0x1) {
         /* Vital product data */
@@ -1901,6 +2069,13 @@ static int32_t scsi_disk_emulate_command(SCSIRequest *req, uint8_t *buf)
     case MECHANISM_STATUS:
     case REQUEST_SENSE:
         break;
+    case SEND_DIAGNOSTIC:
+    case RECEIVE_DIAGNOSTIC:
+        if (s->qdev.type != TYPE_ENCLOSURE) {
+            scsi_check_condition(r, SENSE_CODE(INVALID_OPCODE));
+            return 0;
+        }
+        break;
 
     default:
         if (!blk_is_available(s->qdev.conf.blk)) {
@@ -2245,6 +2420,13 @@ static int32_t scsi_disk_dma_command(SCSIRequest *req, uint8_t *buf)
     }
 }
 
+static void scsi_enclosure_reset(DeviceState *dev)
+{
+    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev.qdev, dev);
+
+    scsi_device_purge_requests(&s->qdev, SENSE_CODE(RESET));
+}
+
 static void scsi_disk_reset(DeviceState *dev)
 {
     SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev.qdev, dev);
@@ -2343,12 +2525,13 @@ static void scsi_realize(SCSIDevice *dev, Error **errp)
     SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, dev);
     Error *err = NULL;
 
-    if (!s->qdev.conf.blk) {
+    if ((!s->qdev.conf.blk) && (dev->type != TYPE_ENCLOSURE)) {
         error_setg(errp, "drive property not set");
         return;
     }
 
     if (!(s->features & (1 << SCSI_DISK_F_REMOVABLE)) &&
+        (dev->type != TYPE_ENCLOSURE) &&
         !blk_is_inserted(s->qdev.conf.blk)) {
         error_setg(errp, "Device needs media, but drive is empty");
         return;
@@ -2387,6 +2570,9 @@ static void scsi_realize(SCSIDevice *dev, Error **errp)
         error_setg(errp, "unwanted /dev/sg*");
         return;
     }
+
+    //if (dev->type == TYPE_ENCLOSURE)
+    //    return;
 
     if ((s->features & (1 << SCSI_DISK_F_REMOVABLE)) &&
             !(s->features & (1 << SCSI_DISK_F_NO_REMOVABLE_DEVOPS))) {
@@ -2458,6 +2644,20 @@ static void scsi_disk_realize(SCSIDevice *dev, Error **errp)
     }
 }
 
+static void scsi_enclosure_realize(SCSIDevice *dev, Error **errp)
+{
+    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, dev);
+    if (s->qdev.conf.blk) {
+        blkconf_blocksizes(&s->qdev.conf);
+    }
+    s->qdev.blocksize = s->qdev.conf.logical_block_size;
+    s->qdev.type = TYPE_ENCLOSURE;
+    if (!s->product) {
+        s->product = g_strdup("QEMU DISK ENCLOSURE");
+    }
+    scsi_realize(&s->qdev, errp);
+}
+
 static const SCSIReqOps scsi_disk_emulate_reqops = {
     .size         = sizeof(SCSIDiskReq),
     .free_req     = scsi_free_request,
@@ -2504,6 +2704,9 @@ static const SCSIReqOps *const scsi_disk_reqops_dispatch[256] = {
     [VERIFY_10]                       = &scsi_disk_emulate_reqops,
     [VERIFY_12]                       = &scsi_disk_emulate_reqops,
     [VERIFY_16]                       = &scsi_disk_emulate_reqops,
+
+    [RECEIVE_DIAGNOSTIC]              = &scsi_disk_emulate_reqops,
+    [SEND_DIAGNOSTIC]                 = &scsi_disk_emulate_reqops,
 
     [READ_6]                          = &scsi_disk_dma_reqops,
     [READ_10]                         = &scsi_disk_dma_reqops,
@@ -2978,6 +3181,62 @@ static const TypeInfo scsi_hd_info = {
     .class_init    = scsi_hd_class_initfn,
 };
 
+static const VMStateDescription vmstate_scsi_enclosure_state = {
+    .name = "scsi-encls",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_SCSI_DEVICE(qdev, SCSIDiskState),
+        VMSTATE_BOOL(media_changed, SCSIDiskState),
+        VMSTATE_BOOL(media_event, SCSIDiskState),
+        VMSTATE_BOOL(eject_request, SCSIDiskState),
+        VMSTATE_BOOL(tray_open, SCSIDiskState),
+        VMSTATE_BOOL(tray_locked, SCSIDiskState),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static Property scsi_enclosure_properties[] = {
+    DEFINE_SCSI_DISK_PROPERTIES(),
+    DEFINE_PROP_BIT("removable", SCSIDiskState, features,
+                    SCSI_DISK_F_REMOVABLE, false),
+    DEFINE_PROP_BIT("dpofua", SCSIDiskState, features,
+                    SCSI_DISK_F_DPOFUA, false),
+    DEFINE_PROP_UINT64("wwn", SCSIDiskState, qdev.wwn, 0),
+    DEFINE_PROP_UINT64("port_wwn", SCSIDiskState, qdev.port_wwn, 0),
+    DEFINE_PROP_UINT16("port_index", SCSIDiskState, port_index, 0),
+    DEFINE_PROP_UINT64("max_unmap_size", SCSIDiskState, max_unmap_size,
+                       DEFAULT_MAX_UNMAP_SIZE),
+    DEFINE_PROP_UINT64("max_io_size", SCSIDiskState, max_io_size,
+                       DEFAULT_MAX_IO_SIZE),
+    DEFINE_BLOCK_CHS_PROPERTIES(SCSIDiskState, qdev.conf),
+    DEFINE_PROP_UINT32("rotation", SCSIDiskState, rotation, 7200),
+    DEFINE_PROP_UINT32("slot_number", SCSIDiskState, qdev.slot_number, 0),
+    DEFINE_PROP_END_OF_LIST(),
+};
+
+static void scsi_enclosure_class_initfn(ObjectClass *klass, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    SCSIDeviceClass *sc = SCSI_DEVICE_CLASS(klass);
+
+    sc->realize      = scsi_enclosure_realize;
+    sc->alloc_req    = scsi_new_request;
+    sc->unit_attention_reported = scsi_disk_unit_attention_reported;
+    dc->fw_name = "enclosure";
+    dc->desc = "virtual SCSI enclosure";
+    dc->reset = scsi_enclosure_reset;
+    dc->props = scsi_enclosure_properties;
+    dc->vmsd  = &vmstate_scsi_enclosure_state;
+}
+
+static const TypeInfo scsi_encls_info = {
+    .name          = "scsi-encls",
+    .parent        = TYPE_SCSI_DEVICE,
+    .instance_size = sizeof(SCSIDiskState),
+    .class_init    = scsi_enclosure_class_initfn,
+};
+
 static Property scsi_cd_properties[] = {
     DEFINE_SCSI_DISK_PROPERTIES(),
     DEFINE_PROP_UINT64("wwn", SCSIDiskState, qdev.wwn, 0),
@@ -3084,6 +3343,7 @@ static void scsi_disk_register_types(void)
     type_register_static(&scsi_block_info);
 #endif
     type_register_static(&scsi_disk_info);
+    type_register_static(&scsi_encls_info);
 }
 
 type_init(scsi_disk_register_types)

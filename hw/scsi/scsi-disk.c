@@ -1998,7 +1998,7 @@ static int32_t scsi_disk_emulate_command(SCSIRequest *req, uint8_t *buf)
     }
 
     /*
-     * Check if device is in formatting, if so, requests except INQUIRY, REPORT_LUNS and
+	 * Check if device is in formatting, if so, requests except INQUIRY, REPORT_LUNS and
      * REQUEST_SENSE should return CHECK_CONDITION status.
      */
     switch (req->cmd.buf[0]) {
@@ -2647,10 +2647,8 @@ static const SCSIReqOps *const scsi_disk_reqops_dispatch[256] = {
     [VERIFY_12]                       = &scsi_disk_emulate_reqops,
     [VERIFY_16]                       = &scsi_disk_emulate_reqops,
     [FORMAT_UNIT]                     = &scsi_disk_emulate_reqops,
-
     [RECEIVE_DIAGNOSTIC]              = &scsi_disk_emulate_reqops,
     [SEND_DIAGNOSTIC]                 = &scsi_disk_emulate_reqops,
-
     [READ_6]                          = &scsi_disk_dma_reqops,
     [READ_10]                         = &scsi_disk_dma_reqops,
     [READ_12]                         = &scsi_disk_dma_reqops,

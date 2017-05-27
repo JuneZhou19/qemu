@@ -733,6 +733,84 @@ static int scsi_enclosure_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
     return buflen;
 }
 
+static int scsi_disk_emulate_eses_receive_diag(SCSIRequest *req, uint8_t *outbuf, struct SCSISense **sense_code)
+{
+    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, req->dev);
+    int buflen = 0;
+    fbe_u8_t receive_diagnostic_page_code;
+    fbe_bool_t not_ready = FBE_TRUE;
+
+    status = sanity_check_cdb_receive_diagnostic_results((fbe_u8_t *)&(req->cmd.buf[1]), &receive_diagnostic_page_code);
+    if(status != FBE_STATUS_OK) {
+        *sense_code = &SENSE_CODE(INVALID_FIELD);
+        return -1;
+    }
+
+    /* TODO: Check if the user marked the page as unsupported */
+    switch(receive_diagnostic_page_code)
+    {
+        case SES_PG_CODE_ENCL_STAT:
+            status = build_enclosure_status_diagnostic_page(sg_list, virtual_phy_handle);
+            break;
+        case SES_PG_CODE_ADDL_ELEM_STAT:
+            status = build_additional_element_status_diagnostic_page(sg_list, virtual_phy_handle);
+            break;
+        case SES_PG_CODE_CONFIG:
+            status = build_configuration_diagnostic_page(sg_list, virtual_phy_handle);
+            break;
+        case SES_PG_CODE_EMC_ENCL_STAT:
+            status = build_emc_enclosure_status_diagnostic_page(sg_list, virtual_phy_handle);
+            break;
+        case SES_PG_CODE_DOWNLOAD_MICROCODE_STAT:
+            status = build_download_microcode_status_diagnostic_page(sg_list, virtual_phy_handle);
+            break;
+        case SES_PG_CODE_EMC_STATS_STAT:
+            status = build_emc_statistics_status_diagnostic_page(sg_list, virtual_phy_handle);
+            break;
+        default:
+            //set up sense data here.
+            status = FBE_STATUS_GENERIC_FAILURE;
+            *sense_code = &sense_code_ILLEGAL_REQ_ENCL_FUNC_NOT_SUPPORTED;
+            not_ready = FBE_FALSE;
+            break;        
+    }
+
+    if (status != FBE_STATUS_OK)
+    {
+        if(not_ready)
+        {
+            // As the status page building failed, this indicates some bug 
+            // (possible) in code. So put "NOT READY" in  sense data and return.
+            DPRINT("%s Building status pages failed, possible BUG in terminator?\n", __FUNCTION__);
+            *sense_code = &sense_code_KEY_NOT_READY_ENCL_SRVC_NA;
+        }
+    }
+    else
+    {
+        common_pg_hdr = (ses_common_pg_hdr_struct *)fbe_sg_element_address(sg_list);          
+        transferred_count = (fbe_u16_t)(swap16(common_pg_hdr->pg_len) + 4);
+    }
+    return transferred_count;    
+}
+
+static int scsi_disk_emulate_eses(SCSIRequest *req, uint8_t *outbuf, struct SCSISense **sense_code)
+{
+    switch(req->cmd.buf[0]) {
+    case SEND_DIAGNOSTIC:
+        buflen = scsi_disk_emulate_eses_send_diag(req, outbuf, sense_code);
+        break;
+    case RECEIVE_DIAGNOSTIC:
+        buflen = scsi_disk_emulate_eses_receive_diag(req, outbuf, sense_code);
+        break;
+    default:
+        *sense_code = &SENSE_CODE(INVALID_OPCODE);
+        DPRINTF("Unknown SCSI command (%2.2x=%s)\n", req->cmd.buf[0],
+                scsi_command_name(req->cmd.buf[0]));
+        return -1;
+    }
+    return -1;
+}
+
 static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
 {
     SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, req->dev);
@@ -2053,6 +2131,7 @@ static int32_t scsi_disk_emulate_command(SCSIRequest *req, uint8_t *buf)
     uint64_t nb_sectors;
     uint8_t *outbuf;
     int buflen;
+    struct SCSISense *outSense = NULL;
 
     switch (req->cmd.buf[0]) {
     case INQUIRY:
@@ -2303,6 +2382,13 @@ static int32_t scsi_disk_emulate_command(SCSIRequest *req, uint8_t *buf)
                 req->cmd.buf[0] == WRITE_SAME_10 ? 10 : 16,
                 (unsigned long)r->req.cmd.xfer);
         break;
+    case SEND_DIAGNOSTIC:
+    case RECEIVE_DIAGNOSTIC:
+        buflen = scsi_disk_emulate_eses(req, outbuf, &outSense);
+        if (buflen < 0) {
+            goto illegal_request;
+        }
+        break;
     default:
         DPRINTF("Unknown SCSI command (%2.2x=%s)\n", buf[0],
                 scsi_command_name(buf[0]));
@@ -2323,7 +2409,10 @@ static int32_t scsi_disk_emulate_command(SCSIRequest *req, uint8_t *buf)
 
 illegal_request:
     if (r->req.status == -1) {
-        scsi_check_condition(r, SENSE_CODE(INVALID_FIELD));
+        if (outSense != NULL)
+            scsi_check_condition(r, *outSense);
+        else
+            scsi_check_condition(r, SENSE_CODE(INVALID_FIELD));
     }
     return 0;
 

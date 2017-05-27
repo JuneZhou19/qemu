@@ -1533,6 +1533,16 @@ const struct SCSISense sense_code_SPACE_ALLOC_FAILED = {
     .key = DATA_PROTECT, .asc = 0x27, .ascq = 0x07
 };
 
+/* unsupported enclosure function */
+const struct SCSISense sense_code_ILLEGAL_REQ_ENCL_FUNC_NOT_SUPPORTED = {
+    .key = ILLEGAL_REQUEST, .asc = 0x35, .ascq = 0x01
+};
+
+/* enclosure service unavalible */
+const struct SCSISense sense_code_KEY_NOT_READY_ENCL_SRVC_NA = {
+    .key = NOT_READY, .asc = 0x35, .ascq = 0x02
+};
+
 /*
  * scsi_build_sense
  *

@@ -892,10 +892,8 @@ static size_t mpt3sas_config_sas_device_0(MPT3SASState *s, uint8_t **data, int a
         expander_idx = scsi_id / s->expander.downstream_phys;
 
         sas_device_pg0.EnclosureHandle = MPT3SAS_EXPANDER_ENCLOSURE_HANDLE + expander_idx;
-        if (d)
-            sas_device_pg0.Slot = d->slot_number;
-        else
-            sas_device_pg0.Slot = scsi_id % s->expander.downstream_phys;
+        //sas_device_pg0.Slot = dev_num % s->expander.downstream_phys;
+        sas_device_pg0.Slot = d->slot_number;
         sas_device_pg0.SASAddress = cpu_to_le64(sas_address);
         sas_device_pg0.DevHandle = cpu_to_le16(handle);
         sas_device_pg0.ParentDevHandle = mpt3sas_get_parent_dev_handle(s, scsi_id,

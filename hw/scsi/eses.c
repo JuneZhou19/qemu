@@ -7,6 +7,7 @@
 
 #include "ses.h"
 
+#include "hw/boards.h"  // for current_machine
 
 /* prototypes */
 fbe_status_t enclosure_status_diagnostic_page_build_device_slot_status_elements(
@@ -31,7 +32,8 @@ fbe_status_t config_page_get_start_elem_index_in_stat_page(terminator_sas_virtua
                                                             fbe_u8_t *index);
 
 
-static terminator_sp_id_t terminator_sp_id = TERMINATOR_SP_A;
+//static terminator_sp_id_t terminator_sp_id = TERMINATOR_SP_A;
+static fbe_bool_t conf_page_inited = FALSE;
 
 //define tabasco a and b side config page
 #define TABASCO_CONFIGURATION_PAGE_CONTENTS \
@@ -314,7 +316,7 @@ static __inline ses_subencl_desc_struct *fbe_eses_get_next_ses_subencl_desc_p(se
 
 fbe_status_t fbe_terminator_api_get_sp_id(terminator_sp_id_t *sp_id)
 {
-    *sp_id = terminator_sp_id;
+    *sp_id = current_machine->spid;
     return FBE_STATUS_OK;
 }
 
@@ -557,6 +559,9 @@ fbe_status_t config_page_init(void)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sp_id_t spid;
+
+    if (conf_page_inited)
+        return FBE_STATUS_OK;
     
     status =  fbe_terminator_api_get_sp_id(&spid);
 
@@ -574,6 +579,8 @@ fbe_status_t config_page_init(void)
                                                 &tabasco_config_page_info_with_ps.num_ver_descs,
                                                 &tabasco_config_page_info_with_ps.num_buf_descs,
                                                 &tabasco_config_page_info_with_ps.encl_stat_diag_page_size);
+
+    conf_page_inited = TRUE;
 
     return status;
 }

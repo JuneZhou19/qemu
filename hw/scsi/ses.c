@@ -713,6 +713,9 @@ static void scsi_ses_realize(SCSIDevice *dev, Error **errp)
         s->vendor = g_strdup("QEMU");
     }
 
+    /* initialize ESES, put here for current_machine is ready */
+    config_page_init();
+
     /* initialize VPHY SAS Info */
     s->eses_sas_info = sas_virtual_phy_info_new(s->dae_type, s->qdev.wwn);
 }
@@ -803,9 +806,6 @@ static void scsi_ses_class_initfn(ObjectClass *klass, void *data)
     dc->desc = "Virtual SCSI Enclosure Service";
     dc->reset = scsi_ses_reset;
     dc->props = scsi_ses_properties;
-
-    /* initialize ESES */
-    config_page_init();
 }
 
 static const TypeInfo scsi_ses_info = {

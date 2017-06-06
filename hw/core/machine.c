@@ -103,6 +103,36 @@ static void machine_set_kvm_shadow_mem(Object *obj, Visitor *v,
     ms->kvm_shadow_mem = value;
 }
 
+static void machine_get_spid(Object *obj, Visitor *v,
+                             const char *name, void *opaque,
+                             Error **errp)
+{
+    MachineState *ms = MACHINE(obj);
+    int64_t value = ms->spid;
+
+    visit_type_int(v, name, &value, errp);
+}
+
+static void machine_set_spid(Object *obj, Visitor *v,
+                             const char *name, void *opaque,
+                             Error **errp)
+{
+    MachineState *ms = MACHINE(obj);
+    Error *error = NULL;
+    int64_t value;
+
+    visit_type_int(v, name, &value, &error);
+    if (error) {
+        error_propagate(errp, error);
+        return;
+    }
+
+    if (value > 0)
+        ms->spid = 1; // SPB
+    else
+        ms->spid = 0; // SPA
+}
+
 static char *machine_get_kernel(Object *obj, Error **errp)
 {
     MachineState *ms = MACHINE(obj);
@@ -511,6 +541,12 @@ static void machine_class_init(ObjectClass *oc, void *data)
         NULL, NULL, &error_abort);
     object_class_property_set_description(oc, "kernel-irqchip",
         "Configure KVM in-kernel irqchip", &error_abort);
+
+    object_class_property_add(oc, "spid", "int",
+        machine_get_spid, machine_set-spid,
+        NULL, NULL, &error_abort);
+    object_class_property_set_description(oc, "spid",
+        "SPID for this machine, 0 is SPA and 1 is SPB",&error_abort);
 
     object_class_property_add(oc, "kvm-shadow-mem", "int",
         machine_get_kvm_shadow_mem, machine_set_kvm_shadow_mem,

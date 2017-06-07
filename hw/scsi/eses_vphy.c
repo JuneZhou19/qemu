@@ -34,6 +34,9 @@ NOTE: 255 is used in the mapping array if the mapping is
 #define DEFAULT_ENCLOSURE_FIRMWARE_ACTIVATE_TIME_INTERVAL 0
 #define DEFAULT_ENCLOSURE_FIRMWARE_RESET_TIME_INTERVAL 0
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-braces"
+
 terminator_sas_encl_eses_info_t a_encl_eses_info_table[] = {
     {FBE_SAS_ENCLOSURE_TYPE_BULLET, 15,    36,     20,     10,      5,      4,      2,      4,      1, 0, 0, 0, 0, 2, 0, 0,0, 2, 0, 0},
 
@@ -786,6 +789,8 @@ terminator_sas_encl_eses_info_t b_encl_eses_info_table[] = {
 
     {FBE_SAS_ENCLOSURE_TYPE_LAST,   0,     0,      0,      0,      0,      0,      0,      0}
 };
+
+#pragma GCC diagnostic pop
 
 //static terminator_sas_unsupported_eses_page_info_t unsupported_eses_page_info;
 

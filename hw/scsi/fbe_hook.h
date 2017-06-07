@@ -68,12 +68,12 @@ typedef char CHAR;
 
 typedef void* fbe_terminator_device_ptr_t;
 
-inline void * fbe_terminator_allocate_memory(fbe_u32_t NumberOfBytes)
+static inline void * fbe_terminator_allocate_memory(fbe_u32_t NumberOfBytes)
 {
     return malloc(NumberOfBytes);
 }
 
-inline void fbe_terminator_free_memory(void * mem_ptr)
+static inline void fbe_terminator_free_memory(void * mem_ptr)
 {
     if (mem_ptr)
         free(mem_ptr);

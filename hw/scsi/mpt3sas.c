@@ -123,9 +123,8 @@ typedef struct MPT3SASConfigPage {
 #define HANDLE_TO_SCSI_ID(handle)   ((handle) - MPT3SAS_ATTACHED_DEV_HANDLE_START)
 #define SCSI_ID_TO_HANDLE(scsi_id)  (MPT3SAS_ATTACHED_DEV_HANDLE_START + (scsi_id))
 
-#define PHY_INDEX(s, scsi_id) ((scsi_id) % (s)->expander.downstream_phys)
-#define SCSI_ID_TO_EXP_PHY(s, scsi_id) (PHY_INDEX((s), (scsi_id)) == s->expander.downstream_phys - 1 ? (s)->expander.all_phys - 1 : (s)->expander.downstream_start_phy + PHY_INDEX((s), (scsi_id)))
-#define EXP_PHY_TO_SCSI_ID(s, exp_id, phy_id) ((phy_id) == (s)->expander.all_phys - 1 ? ((exp_id + 1) * (s)->expander.downstream_phys) - 1 : (phy_id) + (exp_id) * (s)->expander.downstream_phys - (s)->expander.downstream_start_phy)
+#define SCSI_ID_TO_EXP_PHY(s, scsi_id) ((s)->expander.downstream_start_phy + ((scsi_id) % ((s)->expander.all_phys - (s)->expander.downstream_start_phy)))
+#define EXP_PHY_TO_SCSI_ID(s, exp_id, phy_id) ((phy_id) + (exp_id) * (s)->expander.downstream_phys - (s)->expander.downstream_start_phy)
 
 #if 0
 static int mpt3sas_get_scsi_drive_num(MPT3SASState *s)
@@ -892,8 +891,10 @@ static size_t mpt3sas_config_sas_device_0(MPT3SASState *s, uint8_t **data, int a
         expander_idx = scsi_id / s->expander.downstream_phys;
 
         sas_device_pg0.EnclosureHandle = MPT3SAS_EXPANDER_ENCLOSURE_HANDLE + expander_idx;
-        //sas_device_pg0.Slot = dev_num % s->expander.downstream_phys;
-        sas_device_pg0.Slot = d->slot_number;
+        if (d)
+            sas_device_pg0.Slot = d->slot_number;
+        else
+            sas_device_pg0.Slot = scsi_id % s->expander.downstream_phys;
         sas_device_pg0.SASAddress = cpu_to_le64(sas_address);
         sas_device_pg0.DevHandle = cpu_to_le16(handle);
         sas_device_pg0.ParentDevHandle = mpt3sas_get_parent_dev_handle(s, scsi_id,
@@ -2665,6 +2666,7 @@ static int mpt3sas_disk_change_list_event_enqueue(MPT3SASState *s, uint16_t encl
             break;
 
         uint16_t dev_handle = SCSI_ID_TO_HANDLE(sdev->id);
+
         trace_mpt3sas_event_add_device(sdev, dev_handle, sdev->id, SCSI_ID_TO_EXP_PHY(s, sdev->id));
 
         sas_topology_change_list->PHY[entries].AttachedDevHandle = cpu_to_le16(dev_handle);
@@ -2688,7 +2690,7 @@ static int mpt3sas_disk_change_list_event_enqueue(MPT3SASState *s, uint16_t encl
 
 static void mpt3sas_sas_device_status_change_event_enqueue(MPT3SASState *s, uint32_t rc, int scsi_id) {
     MPT3SASEventData *event_data = NULL;
-    uint8_t dev_handle = DEV_NUM_TO_HANDLE(scsi_id);
+    uint8_t dev_handle = SCSI_ID_TO_HANDLE(scsi_id);
     event_data = g_malloc0(sizeof(MPT3SASEventData) + sizeof(MPI2_EVENT_DATA_SAS_DEVICE_STATUS_CHANGE));
     event_data->length = sizeof(MPI2_EVENT_DATA_SAS_DEVICE_STATUS_CHANGE);
     pMpi2EventDataSasDeviceStatusChange_t sas_dev_stat_change_data = (pMpi2EventDataSasDeviceStatusChange_t)event_data->data;
@@ -2748,7 +2750,7 @@ static void mpt3sas_add_events(MPT3SASState *s)
 
 
         /* notify guest driver sas topology change(report expander PHY), add expander and drives */
-        while (scsi_id_idx < (expander + 1) * s->expander.downstream_phys) {
+        while (scsi_id_idx != (expander + 1) * s->expander.downstream_phys) {
             scsi_id_idx = mpt3sas_disk_change_list_event_enqueue(s, enclosure_handle + expander,
                                             MPT3SAS_EXPANDER_HANDLE_START + expander, /* expander handle */
                                             s->expander.all_phys, /* num phys */
@@ -3423,8 +3425,8 @@ static void mpt3sas_hotplug(HotplugHandler *sptr, DeviceState *dptr, Error **err
     mpt3sas_send_discovery_event(s, MPI2_EVENT_SAS_DISC_RC_STARTED);
 
     uint8_t expander_id = scsi_id / s->expander.downstream_phys;
-    uint8_t phy_id = scsi_id % s->expander.downstream_phys;
-    uint8_t dev_handle = DEV_NUM_TO_HANDLE(scsi_id);
+    uint8_t phy_id = SCSI_ID_TO_EXP_PHY(s, scsi_id);
+    uint8_t dev_handle = SCSI_ID_TO_HANDLE(scsi_id);
 
     // 2. notify driver sas topology change for all newly added device
     MPT3SASEventData *event_data2 = NULL;
@@ -3465,8 +3467,8 @@ static void mpt3sas_hotunplug(HotplugHandler *sptr, DeviceState *dptr, Error **e
     mpt3sas_send_discovery_event(s, MPI2_EVENT_SAS_DISC_RC_STARTED);
 
     uint8_t expander_id = scsi_id / s->expander.downstream_phys;
-    uint8_t phy_id = scsi_id % s->expander.downstream_phys;
-    uint8_t dev_handle = DEV_NUM_TO_HANDLE(scsi_id);
+    uint8_t phy_id = SCSI_ID_TO_EXP_PHY(s, scsi_id);
+    uint8_t dev_handle = SCSI_ID_TO_HANDLE(scsi_id);
 
     // 2. notify driver device status change (internel device reset)
     mpt3sas_sas_device_status_change_event_enqueue(s, MPI2_EVENT_SAS_DEV_STAT_RC_INTERNAL_DEVICE_RESET, scsi_id);

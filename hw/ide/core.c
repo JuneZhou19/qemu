@@ -38,6 +38,7 @@
 #include "hw/ide/internal.h"
 
 
+
 /* These values were based on a Seagate ST3500418AS but have been modified
    to make more sense in QEMU */
 static const int smart_attributes[][12] = {

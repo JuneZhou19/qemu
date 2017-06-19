@@ -123,8 +123,9 @@ typedef struct MPT3SASConfigPage {
 #define HANDLE_TO_SCSI_ID(handle)   ((handle) - MPT3SAS_ATTACHED_DEV_HANDLE_START)
 #define SCSI_ID_TO_HANDLE(scsi_id)  (MPT3SAS_ATTACHED_DEV_HANDLE_START + (scsi_id))
 
-#define SCSI_ID_TO_EXP_PHY(s, scsi_id) ((s)->expander.downstream_start_phy + ((scsi_id) % ((s)->expander.all_phys - (s)->expander.downstream_start_phy)))
-#define EXP_PHY_TO_SCSI_ID(s, exp_id, phy_id) ((phy_id) + (exp_id) * (s)->expander.downstream_phys - (s)->expander.downstream_start_phy)
+#define PHY_INDEX(s, scsi_id) ((scsi_id) % (s)->expander.downstream_phys)
+#define SCSI_ID_TO_EXP_PHY(s, scsi_id) (PHY_INDEX(s, scsi_id) == s->expander.downstream_phys - 1 ? (s)->expander.all_phys - 1 : (s)->expander.downstream_start_phy + PHY_INDEX((s), (scsi_id)))
+#define EXP_PHY_TO_SCSI_ID(s, exp_id, phy_id) ((phy_id) == (s)->expander.all_phys - 1 ? (s)->expander.downstream_phys - 1 : (phy_id) + (exp_id) * (s)->expander.downstream_phys - (s)->expander.downstream_start_phy)
 
 #if 0
 static int mpt3sas_get_scsi_drive_num(MPT3SASState *s)
@@ -1142,6 +1143,13 @@ static size_t mpt3sas_config_sas_expander_1(MPT3SASState *s, uint8_t **data, int
             exp_pg1.AttachedPhyInfo = MPI2_SAS_APHYINFO_REASON_POWER_ON;
             exp_pg1.ExpanderDevHandle = MPT3SAS_EXPANDER_HANDLE_START + expander_idx;
             exp_pg1.DiscoveryInfo = MPI2_SAS_EXPANDER1_DISCINFO_LINK_STATUS_CHANGE;
+        } else if (phy_id >= s->expander.upstream_start_phy + s->expander.upstream_phys && phy_id < s->expander.downstream_start_phy) {
+            exp_pg1.AttachedDeviceInfo =0;
+            exp_pg1.AttachedDevHandle = 0;
+            exp_pg1.NegotiatedLinkRate = MPI2_SAS_NEG_LINK_RATE_UNKNOWN_LINK_RATE;
+            exp_pg1.AttachedPhyInfo = 0;
+            exp_pg1.ExpanderDevHandle = 0;
+            exp_pg1.DiscoveryInfo = 0;
         } else {
             return -1;
         }
@@ -1434,14 +1442,18 @@ static void mpt3sas_post_reply(MPT3SASState *s, uint16_t smid, uint8_t msix_inde
     s->completed_commands++;
     trace_mpt3sas_post_reply_completed(smid);
 
+    // if the interrupt bit is already set, leave it up
+    //if (s->intr_status & MPI2_HIS_REPLY_DESCRIPTOR_INTERRUPT)
+    //    return;
+
+    if (s->doorbell_state == DOORBELL_WRITE)
+        s->doorbell_state = DOORBELL_NONE;
+
     if (s->msix_in_use) {
         mpt3sas_msix_notify(s, msix_index);
     } else {
         s->intr_status |= MPI2_HIS_REPLY_DESCRIPTOR_INTERRUPT;
-        if (s->doorbell_state == DOORBELL_WRITE) {
-            s->doorbell_state = DOORBELL_NONE;
-            s->intr_status |= MPI2_HIS_IOC2SYS_DB_STATUS;
-        }
+        s->intr_status |= MPI2_HIS_IOC2SYS_DB_STATUS;
         mpt3sas_update_interrupt(s);
     }
 }
@@ -3334,6 +3346,8 @@ static void mpt3sas_init_expander(MPT3SASState *s)
 
     s->expander.all_phys += 1; // Leave one virtual phy for enclosure target
     
+    //s->expander.downstream_start_phy = MPT3SAS_NUM_PHYS;
+
     if (!s->expander.upstream_phys || (s->expander.upstream_phys > MPT3SAS_NUM_PHYS / s->expander.count))
         s->expander.upstream_phys = MPT3SAS_NUM_PHYS / s->expander.count;
 
@@ -3342,6 +3356,9 @@ static void mpt3sas_init_expander(MPT3SASState *s)
     if (!s->expander.downstream_phys)
         s->expander.downstream_phys = s->expander.all_phys - s->expander.downstream_start_phy;
 
+    //s->expander.upstream_start_phy = 0;
+
+    // Upstream phy can't be larger than s->expander.all_phys - 1 - MPT3SAS_NUM_PHYS
     if (s->expander.upstream_start_phy > s->expander.all_phys - MPT3SAS_NUM_PHYS - 1)
         s->expander.upstream_start_phy = s->expander.all_phys - MPT3SAS_NUM_PHYS - 1;
 

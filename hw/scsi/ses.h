@@ -36,6 +36,7 @@ struct SCSISESState {
     char *vendor;
     char *product;
     uint8_t dae_type;
+    QemuThread eses_sas_info_thread;
     void *eses_sas_info; // should be terminator_sas_virtual_phy_info_t
 };
 

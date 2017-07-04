@@ -24,6 +24,7 @@ do {  qemu_log_mask(LOG_TRACE, fmt, ##__VA_ARGS__); \
 
 #ifdef __linux
 #include <scsi/sg.h>
+#include <unistd.h>
 #endif
 
 static void scsi_free_request(SCSIRequest *req)
@@ -37,6 +38,58 @@ static void scsi_check_condition(SCSISESReq *r, SCSISense sense)
             r->req.tag, sense.key, sense.asc, sense.ascq);
     scsi_req_build_sense(&r->req, sense);
     scsi_req_complete(&r->req, CHECK_CONDITION);
+}
+
+static void eses_sas_info_array_device_slot_status(SCSISESState *s)
+{
+    // Get current valid scsi-id range
+    SCSIDevice *d = (SCSIDevice *)s;
+    terminator_sas_virtual_phy_info_t *info = (terminator_sas_virtual_phy_info_t *)s->eses_sas_info;
+    fbe_sas_enclosure_type_t encl_type = info->enclosure_type;
+    fbe_u32_t exp_scsi_id = d->id;
+    fbe_u8_t downstream_phys;
+
+    // Init all device status to "NOT_INSTALLED"
+    fbe_u32_t i;
+    sas_virtual_phy_max_drive_slots(encl_type, &downstream_phys);
+    fbe_u32_t valid_scsi_id_start = exp_scsi_id - downstream_phys;
+    for (i = 0; i < downstream_phys; i++) {
+        (info->drive_slot_status+i)->cmn_stat.elem_stat_code = SES_STAT_CODE_NOT_INSTALLED;
+    }
+
+    // Scan all device, and set status to OK if drive device is inserted
+    SCSIBus *bus = scsi_bus_from_device((SCSIDevice *)s);
+    BusChild *kid;
+    QTAILQ_FOREACH_REVERSE(kid, &bus->qbus.children, ChildrenHead, sibling) {
+        DeviceState *qdev = kid->child;
+        SCSIDevice *dev = SCSI_DEVICE(qdev);
+
+        //trace_eses_encl_status_diag_page_array_device_slot(dev, dev->channel, dev->id, dev->lun);
+        if (dev->type == TYPE_DISK)
+        {
+            if (dev->id >= valid_scsi_id_start && dev->id < exp_scsi_id) {
+                // get slot from scsi-id
+                fbe_u8_t slot;
+                slot = dev->id - valid_scsi_id_start;
+                // set the status to OK
+                (info->drive_slot_status + slot)->cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
+            }
+        }
+    }
+}
+
+static void *eses_sas_info_handler(void *args)
+{
+    SCSISESState *s = args;
+    qemu_thread_get_self(&s->eses_sas_info_thread);
+
+    while (true) {
+        // Maintain array device slot information
+        sleep(3);
+        eses_sas_info_array_device_slot_status(s);
+    }
+
+    return NULL;
 }
 
 static int build_enclosure_status_diagnostic_page(SCSIRequest *req, uint8_t *outbuf)
@@ -717,6 +770,10 @@ static void scsi_ses_realize(SCSIDevice *dev, Error **errp)
 
     /* initialize VPHY SAS Info */
     s->eses_sas_info = sas_virtual_phy_info_new(s->dae_type, s->qdev.wwn);
+
+    // Create a thread to maintain eses sas info
+    qemu_thread_create(&s->eses_sas_info_thread, "ESES thread", eses_sas_info_handler, s, QEMU_THREAD_DETACHED);
+
 }
 
 static uint8_t *scsi_get_buf(SCSIRequest *req)

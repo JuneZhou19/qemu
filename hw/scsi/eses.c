@@ -1851,6 +1851,7 @@ static fbe_status_t terminator_get_sas_conn_eses_status(
     ses_stat_elem_sas_conn_struct *sas_conn_stat)
 {
     fbe_status_t status = FBE_STATUS_OK;
+    sas_conn_stat->cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
 #if 0
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     fbe_terminator_device_ptr_t matching_port = NULL;
@@ -1993,7 +1994,7 @@ static fbe_status_t encl_stat_diag_page_sas_conn_elem_get_sas_conn_status(
     }
     else
     {   
-        sas_conn_stat_ptr->conn_type = FBE_ESES_CONN_TYPE_MINI_SAS_4X;
+        sas_conn_stat_ptr->conn_type = FBE_ESES_CONN_TYPE_MINI_SAS_HD_4X;
     }
     return(status);
 }
@@ -2058,18 +2059,32 @@ static fbe_status_t enclosure_status_diagnostic_page_build_peer_sas_conn_status_
     // Fill in the peer LCC SAS connector element statuses. 
     // There is also a overall SAS connector element as the peer lcc is a
     // seperate subenclosure. For now assume that peer lcc is not inserted.
+    //for(i=0; i<max_total_conns; i++)
+    //{
+
+    //    individual_sas_conn_stat_ptr++; 
+    //    memset(individual_sas_conn_stat_ptr, 0, sizeof(ses_stat_elem_sas_conn_struct));
+    //    individual_sas_conn_stat_ptr->conn_type = FBE_ESES_CONN_TYPE_MINI_SAS_HD_4X;
+
+    //    encl_stat_diag_page_sas_conn_elem_get_conn_phyical_link(i, 
+    //                                                            encl_type, 
+    //                                                            &individual_sas_conn_stat_ptr->conn_physical_link); 
+    //
+    //    individual_sas_conn_stat_ptr->cmn_stat.elem_stat_code = SES_STAT_CODE_NOT_INSTALLED;
+    //}
     for(i=0; i<max_total_conns; i++)
     {
-
         individual_sas_conn_stat_ptr++; 
         memset(individual_sas_conn_stat_ptr, 0, sizeof(ses_stat_elem_sas_conn_struct));
-        individual_sas_conn_stat_ptr->conn_type = 0x2;
-
-        encl_stat_diag_page_sas_conn_elem_get_conn_phyical_link(i, 
-                                                                encl_type, 
-                                                                &individual_sas_conn_stat_ptr->conn_physical_link); 
-    
-        individual_sas_conn_stat_ptr->cmn_stat.elem_stat_code = SES_STAT_CODE_NOT_INSTALLED;
+        status = encl_stat_diag_page_sas_conn_elem_get_conn_phyical_link(i, 
+            encl_type, &individual_sas_conn_stat_ptr->conn_physical_link);
+        RETURN_ON_ERROR_STATUS;
+        /* Get the conn status from terminator */
+        status = encl_stat_diag_page_sas_conn_elem_get_sas_conn_status(info, i, individual_sas_conn_stat_ptr);
+        if(status != FBE_STATUS_OK)
+        {
+            return(status);
+        }
     }
     *sas_conn_status_elements_end_ptr = (fbe_u8_t *)( individual_sas_conn_stat_ptr + 1);    
 
@@ -2138,6 +2153,72 @@ static fbe_status_t enclosure_status_diagnostic_page_build_local_sas_conn_status
     return(status);    
 }
 
+
+/*********************************************************************
+*  enclosure_status_diagnostic_page_build_midplane_sas_conn_status_elements ()
+*********************************************************************
+*
+*  Description: This builds the midplane SAS connector elements for the encl 
+*   status diagnostic page. (MIDPLANE)
+*
+*  Inputs: 
+*   status_elements_start_ptr - pointer to the start of expander elements
+*   status_elements_end_ptr - pointer to be returned, that indicates the
+*       end address of the expander elements.
+*   enclosure information, virtual phy device id and port number.
+*
+*  Return Value: success or failure
+*
+*  Notes: 
+*
+*  History:
+*    July05  created
+*    
+*********************************************************************/
+static fbe_status_t enclosure_status_diagnostic_page_build_midplane_sas_conn_status_elements(
+    fbe_u8_t *sas_conn_status_elements_start_ptr, 
+    fbe_u8_t **sas_conn_status_elements_end_ptr,
+    terminator_sas_virtual_phy_info_t *info)
+{
+    fbe_status_t status = FBE_STATUS_OK;
+    ses_stat_elem_sas_conn_struct *individual_sas_conn_stat_ptr = NULL;
+    ses_stat_elem_sas_conn_struct *overall_sas_conn_stat_ptr = NULL;
+    fbe_u8_t downstream_phys;
+    fbe_sas_enclosure_type_t encl_type = info->enclosure_type;
+
+    // for now all of fields are ignored in overall status element
+    overall_sas_conn_stat_ptr = (ses_stat_elem_sas_conn_struct *)sas_conn_status_elements_start_ptr; 
+    memset(overall_sas_conn_stat_ptr, 0, sizeof(ses_stat_elem_sas_conn_struct));
+    overall_sas_conn_stat_ptr->cmn_stat.elem_stat_code = SES_STAT_CODE_NOT_INSTALLED;
+
+    // prepare individual midplane sas conn element
+    individual_sas_conn_stat_ptr = overall_sas_conn_stat_ptr;  
+
+    // for every downstream phys for drive, read from array device slot to see
+    // if this drive is inserted
+    sas_virtual_phy_max_drive_slots(encl_type, &downstream_phys);
+    fbe_u8_t i;
+    for (i = 0; i < downstream_phys; i++)
+    {
+        individual_sas_conn_stat_ptr++; 
+        memset(individual_sas_conn_stat_ptr, 0, sizeof(ses_stat_elem_sas_conn_struct));
+        individual_sas_conn_stat_ptr->cmn_stat.elem_stat_code = info->drive_slot_status[i].cmn_stat.elem_stat_code;
+        individual_sas_conn_stat_ptr->conn_type = FBE_ESES_CONN_TYPE_SAS_DRIVE; 
+        individual_sas_conn_stat_ptr->conn_physical_link = 0xFF;
+
+    }
+
+    // at last, set virtual phy 
+    individual_sas_conn_stat_ptr++; 
+    memset(individual_sas_conn_stat_ptr, 0, sizeof(ses_stat_elem_sas_conn_struct));
+    individual_sas_conn_stat_ptr->cmn_stat.elem_stat_code = SES_STAT_CODE_OK; 
+    individual_sas_conn_stat_ptr->conn_type = FBE_ESES_CONN_TYPE_VIRTUAL_CONN; 
+    individual_sas_conn_stat_ptr->conn_physical_link = 0xFF;
+
+    *sas_conn_status_elements_end_ptr = (fbe_u8_t *)( individual_sas_conn_stat_ptr + 1);
+
+    return(status);    
+}
 
 /*********************************************************************
 *  enclosure_status_diagnostic_page_build_sas_exp_status_elements ()
@@ -3824,6 +3905,37 @@ fbe_status_t enclosure_status_diagnostic_page_build_status_elements(
         status = enclosure_status_diagnostic_page_build_peer_sas_conn_status_elements(stat_elem_start_ptr, 
                                                                                   stat_elem_end_ptr, 
                                                                                   info);
+        RETURN_ON_ERROR_STATUS;
+    }
+
+
+    // Build Midplane SAS Connector status elements.
+    status = config_page_get_start_elem_offset_in_stat_page(info,
+                                                            SES_SUBENCL_TYPE_CHASSIS,
+                                                            FBE_ESES_SUBENCL_SIDE_ID_MIDPLANE, 
+                                                            SES_ELEM_TYPE_SAS_CONN,
+                                                            FALSE,
+                                                            0,
+                                                            FALSE,
+                                                            0,
+                                                            FALSE,
+                                                            NULL,
+                                                            &stat_elem_byte_offset);
+
+    
+    if((status != FBE_STATUS_COMPONENT_NOT_FOUND) &&
+       (status != FBE_STATUS_OK))
+    {
+        // FBE_STATUS_COMPONENT_NOT_FOUND is allowed as it means the configuration page
+        // does not have the particular element.
+        return(status);
+    }
+    else if(status == FBE_STATUS_OK)
+    {
+        stat_elem_start_ptr = encl_stat_diag_page_start_ptr + stat_elem_byte_offset;
+        status = enclosure_status_diagnostic_page_build_midplane_sas_conn_status_elements(stat_elem_start_ptr, 
+                                                                                    stat_elem_end_ptr, 
+                                                                                    info);
         RETURN_ON_ERROR_STATUS;
     }
 

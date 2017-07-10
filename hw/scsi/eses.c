@@ -1332,7 +1332,7 @@ fbe_status_t encl_stat_diag_page_exp_phy_elem_get_exp_index(
 * enclosure_status_diagnostic_page_build_exp_phy_status_elements()
 *********************************************************************
 *
-*  Description: This builds the peer Phy status elements for the encl 
+*  Description: This builds the expander Phy status elements for the encl
 *   status diagnostic page. 
 *
 *  Inputs: 
@@ -1389,6 +1389,15 @@ static fbe_status_t enclosure_status_diagnostic_page_build_exp_phy_status_elemen
         RETURN_ON_ERROR_STATUS;
 
     }
+
+    // build virtual phy
+    individual_exp_phy_stat_ptr++;
+    individual_exp_phy_stat_ptr->phy_rdy = 0x1;
+    individual_exp_phy_stat_ptr->link_rdy = 0x1;
+    individual_exp_phy_stat_ptr->cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
+    individual_exp_phy_stat_ptr->phy_id = max_phy_slots;
+    individual_exp_phy_stat_ptr->exp_index = (individual_exp_phy_stat_ptr - 1)->exp_index;
+
     *exp_phy_status_elements_end_ptr = (fbe_u8_t *)(individual_exp_phy_stat_ptr + 1);   
 
     return(status);
@@ -1671,13 +1680,13 @@ static fbe_status_t terminator_map_position_max_conns_to_range_conn_id(
     {
         if(position < max_conns)
         {
-            // Indicates the connector belongs to the extension port
-            *return_range = CONN_IS_DOWNSTREAM;
+            // Indicates the connector belongs to the primary port
+            *return_range = CONN_IS_UPSTREAM;
         }
         else if(position >= max_conns && (position < max_conns * 2))
         {
-            // Indicates the connector belongs to the primary port
-            *return_range = CONN_IS_UPSTREAM;
+            // Indicates the connector belongs to the extension port
+            *return_range = CONN_IS_DOWNSTREAM;
         }
         else if((position >= max_conns * 2) && (position < max_conns * 4))
         {

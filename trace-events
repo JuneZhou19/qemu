@@ -633,3 +633,13 @@ vcpu guest_user_syscall(uint64_t num, uint64_t arg1, uint64_t arg2, uint64_t arg
 # Mode: user
 # Targets: TCG(all)
 vcpu guest_user_syscall_ret(uint64_t num, uint64_t ret) "num=0x%016"PRIx64" ret=0x%016"PRIx64
+
+# hw/intc/aspeed_vic.c
+aspeed_vic_set_irq(int irq, int level) "Enabling IRQ %d: %d"
+aspeed_vic_update_fiq(int flags) "Raising FIQ: %d"
+aspeed_vic_update_irq(int flags) "Raising IRQ: %d"
+aspeed_vic_read(uint64_t offset, unsigned size, uint32_t value) "From 0x%" PRIx64 " of size %u: 0x%" PRIx32
+aspeed_vic_write(uint64_t offset, unsigned size, uint32_t data) "To 0x%" PRIx64 " of size %u: 0x%" PRIx32
+
+# hw/scsi/ses.c
+eses_sas_info_exp_phy_status(const char *s, uint32_t status) "%s fail, status: %d"

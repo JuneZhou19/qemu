@@ -25,6 +25,8 @@ do {  qemu_log_mask(LOG_TRACE, fmt, ##__VA_ARGS__); \
 #ifdef __linux
 #include <scsi/sg.h>
 #include <unistd.h>
+#include "trace/control.h"
+#include "trace.h"
 #endif
 
 static void scsi_free_request(SCSIRequest *req)
@@ -65,8 +67,7 @@ static void eses_sas_info_array_device_slot_status(SCSISESState *s)
         SCSIDevice *dev = SCSI_DEVICE(qdev);
 
         //trace_eses_encl_status_diag_page_array_device_slot(dev, dev->channel, dev->id, dev->lun);
-        if (dev->type == TYPE_DISK)
-        {
+        if (dev->type == TYPE_DISK) {
             if (dev->id >= valid_scsi_id_start && dev->id < exp_scsi_id) {
                 // get slot from scsi-id
                 fbe_u8_t slot;
@@ -78,6 +79,92 @@ static void eses_sas_info_array_device_slot_status(SCSISESState *s)
     }
 }
 
+static void eses_sas_info_exp_phy_status(SCSISESState *s)
+{
+    // Prepare info
+    terminator_sas_virtual_phy_info_t *info = (terminator_sas_virtual_phy_info_t *)s->eses_sas_info;
+    fbe_sas_enclosure_type_t encl_type = info->enclosure_type;
+    fbe_u8_t max_conn_id_count = 0;
+    fbe_u8_t max_single_lane_port_conn_count = 0;
+    fbe_u8_t max_phy_count = 0;
+    fbe_u8_t max_drive_count = 0;
+    fbe_status_t status = FBE_STATUS_OK;
+
+    // Get mapping based on encl_type
+    status = sas_virtual_phy_max_conn_id_count(encl_type, &max_conn_id_count);
+    if (status != FBE_STATUS_OK) {
+        trace_eses_sas_info_exp_phy_status("Get max_conn_id_count", status);
+    }
+
+    status = sas_virtual_phy_max_single_lane_conns_per_port(encl_type, &max_single_lane_port_conn_count);
+    if (status != FBE_STATUS_OK) {
+        trace_eses_sas_info_exp_phy_status("Get max_single_lane_conns_per_port", status);
+    }
+
+    status = sas_virtual_phy_max_phys(encl_type, &max_phy_count);
+    if (status != FBE_STATUS_OK) {
+        trace_eses_sas_info_exp_phy_status("Get max_phys", status);
+    }
+
+    status = sas_virtual_phy_max_drive_slots(encl_type, &max_drive_count);
+    if (status != FBE_STATUS_OK) {
+        trace_eses_sas_info_exp_phy_status("Get max_drive_slots", status);
+    }
+    //Init all phy status to NOT_AVAILABLE
+    fbe_u32_t i, j;
+    for (i = 0; i < max_phy_count; i++){
+        info->phy_status[i].cmn_stat.elem_stat_code = SES_STAT_CODE_UNAVAILABLE;
+        info->phy_status[i].phy_rdy = 0x0;
+        info->phy_status[i].link_rdy = 0x0;
+    }
+
+    // For phy in drive_slot_to_phy_map,
+    // and individual_conn_phy_mapping, (depending on max_conn_id_count and max_single_lane_port_conn_count)
+    // mark stat code of phy in upstream connector as OK, otherwise, mark as NOT_AVAILABLE
+    fbe_u8_t phy_id;
+    for (i = 0; i < max_drive_count; i++) {
+        status = sas_virtual_phy_get_drive_slot_to_phy_mapping(i, &phy_id, encl_type);
+        info->phy_status[phy_id].cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
+    }
+
+    // If phy of upstream and downstream port are connected, set LINK_RDY and PHY_RDY to ready
+    for (j = 0; j < max_conn_id_count; j++) {
+        for (i = 0; i < max_single_lane_port_conn_count; i++) {
+            status = sas_virtual_phy_get_individual_conn_to_phy_mapping(i, j, &phy_id, encl_type);
+            info->phy_status[phy_id].cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
+        }
+    }
+
+    // If drive is inserted on this phy, set LINK_RDY and PHY_RDY to ready, otherwise, set it to not ready
+    SCSIDevice *d = (SCSIDevice *)s;
+    fbe_u32_t exp_scsi_id = d->id;
+    fbe_u8_t downstream_phys;
+    sas_virtual_phy_max_drive_slots(encl_type, &downstream_phys);
+    fbe_u32_t valid_scsi_id_start = exp_scsi_id - downstream_phys;
+    SCSIBus *bus = scsi_bus_from_device((SCSIDevice *)s);
+    BusChild *kid;
+    fbe_u8_t slot;
+    QTAILQ_FOREACH_REVERSE(kid, &bus->qbus.children, ChildrenHead, sibling){
+        DeviceState *qdev = kid->child;
+        SCSIDevice *dev = SCSI_DEVICE(qdev);
+
+        //trace_eses_encl_status_diag_page_array_device_slot(dev, dev->channel, dev->id, dev->lun);
+        if (dev->type == TYPE_DISK)
+        {
+            if (dev->id >= valid_scsi_id_start && dev->id < exp_scsi_id){
+                // get slot from scsi-id
+                slot = dev->id - valid_scsi_id_start;
+                // set PHY_RDY to ready
+                info->phy_status[slot].phy_rdy = 0x1;
+                // FIXME
+                // set LINK_RDY to ready
+                info->phy_status[slot].link_rdy = info->phy_status[slot].phy_rdy;
+            }
+        }
+    }
+
+}
+
 static void *eses_sas_info_handler(void *args)
 {
     SCSISESState *s = args;
@@ -86,7 +173,13 @@ static void *eses_sas_info_handler(void *args)
     while (true) {
         // Maintain array device slot information
         sleep(3);
+
+        // Set expander phy status
+        eses_sas_info_exp_phy_status(s);
+
+        // Set array device slot status according to SAS_PHY_RDY
         eses_sas_info_array_device_slot_status(s);
+
     }
 
     return NULL;

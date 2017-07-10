@@ -31,6 +31,12 @@ fbe_status_t config_page_get_start_elem_index_in_stat_page(terminator_sas_virtua
                                                             fbe_u8_t *type_desc_text,
                                                             fbe_u8_t *index);
 
+static fbe_status_t terminator_map_position_max_conns_to_range_conn_id(
+    fbe_sas_enclosure_type_t encl_type,
+    fbe_u8_t position,
+    fbe_u8_t max_conns,
+    terminator_conn_map_range_t *return_range,
+    fbe_u8_t *conn_id);
 
 //static terminator_sp_id_t terminator_sp_id = TERMINATOR_SP_A;
 static fbe_bool_t conf_page_inited = FALSE;
@@ -1399,6 +1405,110 @@ static fbe_status_t enclosure_status_diagnostic_page_build_exp_phy_status_elemen
     individual_exp_phy_stat_ptr->exp_index = (individual_exp_phy_stat_ptr - 1)->exp_index;
 
     *exp_phy_status_elements_end_ptr = (fbe_u8_t *)(individual_exp_phy_stat_ptr + 1);   
+
+    return(status);
+}
+
+/*********************************************************************
+* enclosure_status_diagnostic_page_build_peer_exp_phy_status_elements()
+*********************************************************************
+*
+*  Description: This builds the peer expander Phy status elements for the
+*   encl status diagnostic page.
+*
+*  Inputs:
+*   status_elements_start_ptr - pointer to the start of expander elements
+*   status_elements_end_ptr - pointer to be returned, that indicates the
+*       end address of the expander elements.
+*   enclosure information, virtual phy device id and port number.
+*
+*  Return Value: success or failure
+*
+*  Notes:
+*
+*
+*  History:
+*    Aug08  created
+*
+*********************************************************************/
+
+static fbe_status_t enclosure_status_diagnostic_page_build_peer_exp_phy_status_elements(
+    fbe_u8_t *exp_phy_status_elements_start_ptr,
+    fbe_u8_t **exp_phy_status_elements_end_ptr,
+    terminator_sas_virtual_phy_info_t *info)
+{
+    fbe_status_t status = FBE_STATUS_OK;
+    ses_stat_elem_exp_phy_struct *individual_exp_phy_stat_ptr = NULL;
+    ses_stat_elem_exp_phy_struct *overall_exp_phy_stat_ptr = NULL;
+    // fbe_u8_t max_phy_slots = 0;
+    fbe_u8_t max_conn_id_count = 0;
+    fbe_u8_t max_single_lane_port_conn_count = 0;
+    fbe_u8_t max_lcc_conn_count = 0;
+    terminator_conn_map_range_t range = CONN_IS_UPSTREAM;
+    fbe_u8_t conn_id;
+    fbe_u8_t i, j;
+    fbe_sas_enclosure_type_t encl_type = info->enclosure_type;
+    terminator_sp_id_t spid;
+
+    // Get mapping based on encl_type
+    status = sas_virtual_phy_max_conn_id_count(encl_type, &max_conn_id_count);
+    RETURN_ON_ERROR_STATUS;
+
+    status = sas_virtual_phy_max_single_lane_conns_per_port(encl_type, &max_single_lane_port_conn_count);
+    RETURN_ON_ERROR_STATUS;
+
+    status = sas_virtual_phy_max_conns_per_lcc(encl_type, &max_lcc_conn_count);
+    RETURN_ON_ERROR_STATUS;
+
+    status = fbe_terminator_api_get_sp_id(&spid);
+    RETURN_ON_ERROR_STATUS;
+
+    overall_exp_phy_stat_ptr = (ses_stat_elem_exp_phy_struct *)exp_phy_status_elements_start_ptr;
+
+    // set the fields in expander phy status element
+    // for now all of fields are ignored in overall status element
+    memset (overall_exp_phy_stat_ptr, 0, sizeof(ses_stat_elem_exp_phy_struct));
+
+    individual_exp_phy_stat_ptr = overall_exp_phy_stat_ptr;
+    for (j = 0; j < max_conn_id_count; j++) {
+        for (i = 0; i < max_single_lane_port_conn_count; i++) {
+            individual_exp_phy_stat_ptr++;
+
+            // set status
+            individual_exp_phy_stat_ptr->cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
+
+            // set expander index
+            status = config_page_get_start_elem_index_in_stat_page(info,
+                                                                   SES_SUBENCL_TYPE_LCC,
+                                                                   !spid,
+                                                                   SES_ELEM_TYPE_SAS_EXP,
+                                                                   FALSE,
+                                                                   0,
+                                                                   FALSE,
+                                                                   NULL,
+                                                                   &individual_exp_phy_stat_ptr->exp_index);
+
+            // set phy id
+            uint8_t phy_id = 0;
+            status = sas_virtual_phy_get_individual_conn_to_phy_mapping(i, j, &phy_id, encl_type);
+            individual_exp_phy_stat_ptr->phy_id = phy_id;
+
+            // set phy_rdy and link_rdy
+            terminator_map_position_max_conns_to_range_conn_id(encl_type, phy_id, max_lcc_conn_count, &range, &conn_id);
+            switch (range) {
+                case CONN_IS_UPSTREAM:
+                    individual_exp_phy_stat_ptr->phy_rdy = 0x1;
+                    individual_exp_phy_stat_ptr->link_rdy = individual_exp_phy_stat_ptr->phy_rdy;
+                    break;
+                default:
+                    individual_exp_phy_stat_ptr->phy_rdy = 0x0;
+                    individual_exp_phy_stat_ptr->link_rdy = individual_exp_phy_stat_ptr->phy_rdy;
+                    break;
+            }
+        }
+    }
+
+    *exp_phy_status_elements_end_ptr = (fbe_u8_t *)(individual_exp_phy_stat_ptr + 1);
 
     return(status);
 }
@@ -3855,6 +3965,66 @@ fbe_status_t enclosure_status_diagnostic_page_build_status_elements(
         RETURN_ON_ERROR_STATUS;
     }
 
+    // Build Peer Expander non-drive Phy status elements.
+    status = config_page_get_start_elem_offset_in_stat_page(info,
+                                                            SES_SUBENCL_TYPE_LCC,
+                                                            !spid,
+                                                            SES_ELEM_TYPE_EXP_PHY,
+                                                            FALSE,
+                                                            0,
+                                                            FALSE,
+                                                            0,
+                                                            FALSE,
+                                                            NULL,
+                                                            &stat_elem_byte_offset);
+
+
+    if((status != FBE_STATUS_COMPONENT_NOT_FOUND) &&
+       (status != FBE_STATUS_OK))
+    {
+        // FBE_STATUS_COMPONENT_NOT_FOUND is allowed as it means the configuration page
+        // does not have the particular element.
+        return(status);
+    }
+    else if(status == FBE_STATUS_OK)
+    {
+
+        stat_elem_start_ptr = encl_stat_diag_page_start_ptr + stat_elem_byte_offset;
+        status = enclosure_status_diagnostic_page_build_peer_exp_phy_status_elements(stat_elem_start_ptr,
+                                                                                stat_elem_end_ptr,
+                                                                                info);
+        RETURN_ON_ERROR_STATUS;
+    }
+    // Build Expander Phy status elements.
+    status = config_page_get_start_elem_offset_in_stat_page(info,
+                                                            SES_SUBENCL_TYPE_LCC,
+                                                            spid,
+                                                            SES_ELEM_TYPE_EXP_PHY,
+                                                            FALSE,
+                                                            0,
+                                                            FALSE,
+                                                            0,
+                                                            FALSE,
+                                                            NULL,
+                                                            &stat_elem_byte_offset);
+
+
+    if((status != FBE_STATUS_COMPONENT_NOT_FOUND) &&
+       (status != FBE_STATUS_OK))
+    {
+        // FBE_STATUS_COMPONENT_NOT_FOUND is allowed as it means the configuration page
+        // does not have the particular element.
+        return(status);
+    }
+    else if(status == FBE_STATUS_OK)
+    {
+
+        stat_elem_start_ptr = encl_stat_diag_page_start_ptr + stat_elem_byte_offset;
+        status = enclosure_status_diagnostic_page_build_exp_phy_status_elements(stat_elem_start_ptr,
+                                                                                stat_elem_end_ptr,
+                                                                                info);
+        RETURN_ON_ERROR_STATUS;
+    }
 
     // Build Local SAS Connector status elements.
     status = config_page_get_start_elem_offset_in_stat_page(info,

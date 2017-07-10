@@ -118,21 +118,26 @@ static void eses_sas_info_exp_phy_status(SCSISESState *s)
         info->phy_status[i].link_rdy = 0x0;
     }
 
-    // For phy in drive_slot_to_phy_map,
-    // and individual_conn_phy_mapping, (depending on max_conn_id_count and max_single_lane_port_conn_count)
-    // mark stat code of phy in upstream connector as OK, otherwise, mark as NOT_AVAILABLE
+    // FIXME
+    // Set upstream port phys to connected, set LINK_RDY and PHY_RDY to ready
     fbe_u8_t phy_id;
-    for (i = 0; i < max_drive_count; i++) {
-        status = sas_virtual_phy_get_drive_slot_to_phy_mapping(i, &phy_id, encl_type);
-        info->phy_status[phy_id].cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
+    for (i = 0; i < max_single_lane_port_conn_count; i++) {
+        status = sas_virtual_phy_get_individual_conn_to_phy_mapping(i, 0, &phy_id, encl_type);
+        info->phy_status[phy_id].phy_rdy = 0x1;
+        info->phy_status[phy_id].link_rdy = 0x1;
     }
-
-    // If phy of upstream and downstream port are connected, set LINK_RDY and PHY_RDY to ready
+    // Set phys in individual_conn_phy_mapping to OK
     for (j = 0; j < max_conn_id_count; j++) {
         for (i = 0; i < max_single_lane_port_conn_count; i++) {
             status = sas_virtual_phy_get_individual_conn_to_phy_mapping(i, j, &phy_id, encl_type);
             info->phy_status[phy_id].cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
         }
+    }
+
+    // For phy in drive_slot_to_phy_map, set status to OK
+    for (i = 0; i < max_drive_count; i++) {
+        status = sas_virtual_phy_get_drive_slot_to_phy_mapping(i, &phy_id, encl_type);
+        info->phy_status[phy_id].cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
     }
 
     // If drive is inserted on this phy, set LINK_RDY and PHY_RDY to ready, otherwise, set it to not ready
@@ -151,14 +156,15 @@ static void eses_sas_info_exp_phy_status(SCSISESState *s)
         //trace_eses_encl_status_diag_page_array_device_slot(dev, dev->channel, dev->id, dev->lun);
         if (dev->type == TYPE_DISK)
         {
-            if (dev->id >= valid_scsi_id_start && dev->id < exp_scsi_id){
+            if (dev->id >= valid_scsi_id_start && dev->id < exp_scsi_id) {
                 // get slot from scsi-id
                 slot = dev->id - valid_scsi_id_start;
                 // set PHY_RDY to ready
-                info->phy_status[slot].phy_rdy = 0x1;
+                status = sas_virtual_phy_get_drive_slot_to_phy_mapping(slot, &phy_id, encl_type);
+                info->phy_status[phy_id].phy_rdy = 0x1;
                 // FIXME
                 // set LINK_RDY to ready
-                info->phy_status[slot].link_rdy = info->phy_status[slot].phy_rdy;
+                info->phy_status[phy_id].link_rdy = info->phy_status[phy_id].phy_rdy;
             }
         }
     }

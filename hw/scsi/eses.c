@@ -1443,9 +1443,7 @@ static fbe_status_t enclosure_status_diagnostic_page_build_peer_exp_phy_status_e
     // fbe_u8_t max_phy_slots = 0;
     fbe_u8_t max_conn_id_count = 0;
     fbe_u8_t max_single_lane_port_conn_count = 0;
-    fbe_u8_t max_lcc_conn_count = 0;
-    terminator_conn_map_range_t range = CONN_IS_UPSTREAM;
-    fbe_u8_t conn_id;
+    fbe_u8_t max_port_conn_count = 0;
     fbe_u8_t i, j;
     fbe_sas_enclosure_type_t encl_type = info->enclosure_type;
     terminator_sp_id_t spid;
@@ -1457,7 +1455,7 @@ static fbe_status_t enclosure_status_diagnostic_page_build_peer_exp_phy_status_e
     status = sas_virtual_phy_max_single_lane_conns_per_port(encl_type, &max_single_lane_port_conn_count);
     RETURN_ON_ERROR_STATUS;
 
-    status = sas_virtual_phy_max_conns_per_lcc(encl_type, &max_lcc_conn_count);
+    status = sas_virtual_phy_max_conns_per_port(encl_type, &max_port_conn_count);
     RETURN_ON_ERROR_STATUS;
 
     status = fbe_terminator_api_get_sp_id(&spid);
@@ -1493,11 +1491,15 @@ static fbe_status_t enclosure_status_diagnostic_page_build_peer_exp_phy_status_e
             status = sas_virtual_phy_get_individual_conn_to_phy_mapping(i, j, &phy_id, encl_type);
             individual_exp_phy_stat_ptr->phy_id = phy_id;
 
+            // FIXME
             // set phy_rdy and link_rdy
-            terminator_map_position_max_conns_to_range_conn_id(encl_type, phy_id, max_lcc_conn_count, &range, &conn_id);
-            switch (range) {
-                case CONN_IS_UPSTREAM:
+            switch (j) {
+                case 0:
                     individual_exp_phy_stat_ptr->phy_rdy = 0x1;
+                    individual_exp_phy_stat_ptr->link_rdy = individual_exp_phy_stat_ptr->phy_rdy;
+                    break;
+                case 1:
+                    individual_exp_phy_stat_ptr->phy_rdy = 0x0;
                     individual_exp_phy_stat_ptr->link_rdy = individual_exp_phy_stat_ptr->phy_rdy;
                     break;
                 default:

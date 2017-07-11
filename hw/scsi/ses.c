@@ -45,36 +45,30 @@ static void scsi_check_condition(SCSISESReq *r, SCSISense sense)
 static void eses_sas_info_array_device_slot_status(SCSISESState *s)
 {
     // Get current valid scsi-id range
-    SCSIDevice *d = (SCSIDevice *)s;
     terminator_sas_virtual_phy_info_t *info = (terminator_sas_virtual_phy_info_t *)s->eses_sas_info;
     fbe_sas_enclosure_type_t encl_type = info->enclosure_type;
-    fbe_u32_t exp_scsi_id = d->id;
-    fbe_u8_t downstream_phys;
+    fbe_u8_t drive_slots;
+    fbe_u8_t phy_id;
+    fbe_status_t status;
 
     // Init all device status to "NOT_INSTALLED"
     fbe_u32_t i;
-    sas_virtual_phy_max_drive_slots(encl_type, &downstream_phys);
-    fbe_u32_t valid_scsi_id_start = exp_scsi_id - downstream_phys;
-    for (i = 0; i < downstream_phys; i++) {
-        (info->drive_slot_status+i)->cmn_stat.elem_stat_code = SES_STAT_CODE_NOT_INSTALLED;
+    sas_virtual_phy_max_drive_slots(encl_type, &drive_slots);
+    for (i = 0; i < drive_slots; i++) {
+        (info->drive_slot_status + i)->cmn_stat.elem_stat_code = SES_STAT_CODE_NOT_INSTALLED;
     }
 
-    // Scan all device, and set status to OK if drive device is inserted
-    SCSIBus *bus = scsi_bus_from_device((SCSIDevice *)s);
-    BusChild *kid;
-    QTAILQ_FOREACH_REVERSE(kid, &bus->qbus.children, ChildrenHead, sibling) {
-        DeviceState *qdev = kid->child;
-        SCSIDevice *dev = SCSI_DEVICE(qdev);
+    // Referring to phy status, set array device slot element
+    for (i = 0; i < drive_slots; i++) {
+        // Get phy from mapping
+        status = sas_virtual_phy_get_drive_slot_to_phy_mapping(i, &phy_id, encl_type);
+        if (status != FBE_STATUS_OK) {
+            trace_eses_sas_info_array_device_slot_status("Get phy_ip from slot mapping", status);
+        }
 
-        //trace_eses_encl_status_diag_page_array_device_slot(dev, dev->channel, dev->id, dev->lun);
-        if (dev->type == TYPE_DISK) {
-            if (dev->id >= valid_scsi_id_start && dev->id < exp_scsi_id) {
-                // get slot from scsi-id
-                fbe_u8_t slot;
-                slot = dev->id - valid_scsi_id_start;
-                // set the status to OK
-                (info->drive_slot_status + slot)->cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
-            }
+        // Check this phy's phy_rdy and link_rdy, set status accordingly
+        if (info->phy_status[phy_id].phy_rdy && info->phy_status[phy_id].link_rdy) {
+            (info->drive_slot_status + i)->cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
         }
     }
 }

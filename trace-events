@@ -641,5 +641,7 @@ aspeed_vic_update_irq(int flags) "Raising IRQ: %d"
 aspeed_vic_read(uint64_t offset, unsigned size, uint32_t value) "From 0x%" PRIx64 " of size %u: 0x%" PRIx32
 aspeed_vic_write(uint64_t offset, unsigned size, uint32_t data) "To 0x%" PRIx64 " of size %u: 0x%" PRIx32
 
-# hw/scsi/ses.c
+# ESES functionality
 eses_sas_info_exp_phy_status(const char *s, uint32_t status) "%s fail, status: %d"
+eses_sas_info_array_device_slot_status(const char *s, uint32_t status) "%s fail, status: %d"
+eses_vphy_get_individual_conn_to_phy_mapping(uint32_t encl_type, uint8_t connector_id, uint8_t individual_lane, uint8_t phy_id) "Get conn to phy mapping: encl_type:%d conn_id:%d lane:%d phy_id:%d"

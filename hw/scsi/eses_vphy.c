@@ -1,4 +1,6 @@
 #include "eses.h"
+#include "trace.h"
+#include "trace/control.h"
 
 /**********************************/
 /*        local variables         */
@@ -1663,7 +1665,7 @@ fbe_status_t sas_virtual_phy_get_individual_conn_to_phy_mapping(uint8_t individu
             if(encl_eses_info->encl_type == encl_type) 
             {
                 *phy_id = encl_eses_info->individual_conn_to_phy_map[connector_id][individual_lane];
-                printf("%s: encl_type:%d conn_id:%d lane:%d phy_id:%d\n", __FUNCTION__, encl_type, connector_id, individual_lane, *phy_id);
+                trace_eses_vphy_get_individual_conn_to_phy_mapping(encl_type, connector_id, individual_lane, *phy_id);
                 status = FBE_STATUS_OK;
                 return(status);
             }

@@ -64,6 +64,7 @@ static void eses_sas_info_array_device_slot_status(SCSISESState *s)
         status = sas_virtual_phy_get_drive_slot_to_phy_mapping(i, &phy_id, encl_type);
         if (status != FBE_STATUS_OK) {
             trace_eses_sas_info_array_device_slot_status("Get phy_ip from slot mapping", status);
+            return;
         }
 
         // Check this phy's phy_rdy and link_rdy, set status accordingly
@@ -88,21 +89,25 @@ static void eses_sas_info_exp_phy_status(SCSISESState *s)
     status = sas_virtual_phy_max_conn_id_count(encl_type, &max_conn_id_count);
     if (status != FBE_STATUS_OK) {
         trace_eses_sas_info_exp_phy_status("Get max_conn_id_count", status);
+        return;
     }
 
     status = sas_virtual_phy_max_single_lane_conns_per_port(encl_type, &max_single_lane_port_conn_count);
     if (status != FBE_STATUS_OK) {
         trace_eses_sas_info_exp_phy_status("Get max_single_lane_conns_per_port", status);
+        return;
     }
 
     status = sas_virtual_phy_max_phys(encl_type, &max_phy_count);
     if (status != FBE_STATUS_OK) {
         trace_eses_sas_info_exp_phy_status("Get max_phys", status);
+        return;
     }
 
     status = sas_virtual_phy_max_drive_slots(encl_type, &max_drive_count);
     if (status != FBE_STATUS_OK) {
         trace_eses_sas_info_exp_phy_status("Get max_drive_slots", status);
+        return;
     }
     //Init all phy status to NOT_AVAILABLE
     fbe_u32_t i, j;

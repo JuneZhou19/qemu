@@ -153,7 +153,7 @@ struct MPT3SASState {
     uint32_t reply_free_ioc_index;  // head of reply free queue
     uint32_t reply_free_host_index; // tail of reply free queue
 
-    MPT3SASReplyPost reply_post[MPT3SAS_MAX_MSIX_VECTORS];
+    MPT3SASReplyPost reply_post[MPT3SAS_REQUEST_QUEUE_DEPTH + 1];
 
     // maintained internally, private to IOC
     uint64_t request_descriptor_post[MPT3SAS_REQUEST_QUEUE_DEPTH + 1];

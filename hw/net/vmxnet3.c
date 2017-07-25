@@ -62,7 +62,7 @@
     ((s)->compat_flags & VMXNET3_COMPAT_FLAG_OLD_MSI_OFFSETS ? 0x800 : 0x1000)
 
 /* Link speed in Mbps should be shifted by 16 */
-#define VMXNET3_LINK_SPEED      (1000 << 16)
+#define VMXNET3_LINK_SPEED      (10000 << 16)
 
 /* Link status: 1 - up, 0 - down. */
 #define VMXNET3_LINK_STATUS_UP  0x1

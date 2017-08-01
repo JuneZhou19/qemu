@@ -705,12 +705,13 @@ static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
             if (page_code != 0x80 && page_code != 0x83 && page_code != 0xb0 && page_code != 0xb2) {
                 // VPD Page
                 buflen_filled = page_load(s, page_code, 0, &outbuf, INQUIRY_PAGE, &available_space);
+                if (buflen_filled > 0 && page_code != 0 ) return buflen_filled;
             }
         } else {
             // Standard Page
             page_load(s, 0xff, 0xff, &outbuf, INQUIRY_PAGE, &available_space);
         }
-           outbuf = outbuf_bak;
+        outbuf = outbuf_bak;
     }
     else
     {

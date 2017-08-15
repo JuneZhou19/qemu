@@ -35,6 +35,7 @@
 #include "qemu/log.h"
 #include "trace.h"
 #include "qapi/error.h"
+#include <linux/types.h>
 
 #define NAA_LOCALLY_ASSIGNED_ID 0x3ULL
 #define IEEE_COMPANY_LOCALLY_ASSIGNED 0x51866d
@@ -1112,10 +1113,8 @@ static size_t mpt3sas_config_sas_expander_1(MPT3SASState *s, uint8_t **data, int
 
         trace_mpt3sas_sas_expander_config_page_1(expander_idx, phy_id);
 
-        if ((phy_id >= s->expander.downstream_start_phy && phy_id < s->expander.downstream_start_phy + s->expander.downstream_phys - 1) ||
-            (phy_id >= s->expander.downstream_start_phy && phy_id < s->expander.upstream_start_phy) ||
-            (phy_id >= s->expander.upstream_start_phy + s->expander.upstream_phys && phy_id <= s->expander.all_phys - 1)/* ||
-            phy_id == s->expander.all_phys - 1*/) {
+        if ((phy_id >= s->expander.downstream_start_phy && phy_id < s->expander.downstream_start_phy + s->expander.downstream_phys) ||
+            phy_id == s->expander.all_phys - 1) {
             uint32_t device_info;
             uint32_t scsi_id = EXP_PHY_TO_SCSI_ID(s, expander_idx, phy_id);
 
@@ -1143,6 +1142,13 @@ static size_t mpt3sas_config_sas_expander_1(MPT3SASState *s, uint8_t **data, int
             exp_pg1.AttachedPhyInfo = MPI2_SAS_APHYINFO_REASON_POWER_ON;
             exp_pg1.ExpanderDevHandle = MPT3SAS_EXPANDER_HANDLE_START + expander_idx;
             exp_pg1.DiscoveryInfo = MPI2_SAS_EXPANDER1_DISCINFO_LINK_STATUS_CHANGE;
+        } else if (phy_id >= s->expander.expansion_start_phy && phy_id < s->expander.expansion_start_phy + s->expander.expansion_phys) {
+            exp_pg1.AttachedDeviceInfo = 0;
+            exp_pg1.AttachedDevHandle = 0;
+            exp_pg1.NegotiatedLinkRate = 0;
+            exp_pg1.AttachedPhyInfo = 0;
+            exp_pg1.ExpanderDevHandle = 0;
+            exp_pg1.DiscoveryInfo = 0;
         } else {
             return -1;
         }
@@ -2357,6 +2363,36 @@ static void mpt3sas_handle_fw_upload(MPT3SASState *s, uint16_t smid, uint8_t msi
     mpt3sas_post_reply(s, smid, msix_index, (MPI2DefaultReply_t *)&reply);
 }
 
+
+struct rep_general_req {
+    uint8_t smp_frame_type;
+    uint8_t function;
+    uint8_t reserved;
+    uint8_t request_length;
+};
+
+struct rep_general_reply {
+    uint8_t smp_frame_type;
+    uint8_t function;
+    uint8_t result;
+    uint8_t reserved;
+    __be16 change_count;
+    __be16 route_indexes;
+    uint8_t _r_a;
+    uint8_t num_phys;
+    uint8_t conf_route_table:1;
+    uint8_t configuring:1;
+    uint8_t config_others:1;
+    uint8_t orej_retry_supp:1;
+    uint8_t stp_cont_awt:1;
+    uint8_t self_config:1;
+    uint8_t zone_config:1;
+    uint8_t t2t_supp:1;
+    uint8_t _r_c;
+    uint8_t enclosure_logical_id[8];
+    uint8_t _r_d[12];
+} __attribute__ ((packed));
+
 struct rep_manu_request {
     uint8_t smp_frame_type;
     uint8_t function;
@@ -2387,49 +2423,186 @@ struct rep_manu_reply {
     uint8_t vendor_specific[8];
 };
 
+struct discover_request {
+    uint8_t smp_frame_type;
+    uint8_t function;
+    uint8_t allocate_response_length;
+    uint8_t request_length;
+    uint32_t reserved0;
+    uint8_t ignore_zone_group;
+    uint8_t phy_id;
+    uint16_t reserved1;
+} __attribute__((packed));
+
+struct discover_reply {
+    uint8_t smp_frame_type;
+    uint8_t function;
+    uint8_t function_result;
+    uint8_t response_length;
+    uint8_t _r_a[5];
+    uint8_t phy_id;
+    __be16 _r_b;
+    
+    uint8_t _r_c:4;
+    uint8_t attached_dev_type:3;
+    uint8_t _r_d:1;
+
+    uint8_t linkrate:4;
+    uint8_t _r_e:4;
+
+    uint8_t attached_sata_host:1;
+    uint8_t iproto:3;
+    uint8_t _r_f:4;
+
+    uint8_t attached_sata_dev:1;
+    uint8_t tproto:3;
+    uint8_t _r_g:3;
+    uint8_t attached_sata_ps:1;
+
+    uint8_t sas_addr[8];
+    uint8_t attached_sas_addr[8];
+    uint8_t attached_phy_id;
+
+    uint8_t _r_h[7];
+
+    uint8_t hmin_linkrate:4;
+    uint8_t pmin_linkrate:4;
+
+    uint8_t hmax_linkrate:4;
+    uint8_t pmax_linkrate:4;
+
+    uint8_t change_count;
+
+    uint8_t pptv:4;
+    uint8_t _r_i:3;
+    uint8_t virtual:1;
+
+    uint8_t routing_attr:4;
+    uint8_t _r_j:4;
+
+    uint8_t conn_type;
+    uint8_t conn_el_index;
+    uint8_t conn_phy_link;
+
+    uint8_t _r_k[8];
+
+    //uint8_t reserved3[2];
+    //uint16_t vendor_specific;
+    //uint64_t attached_device_name;
+    //uint8_t zpsd;
+    //uint8_t reserved4[2];
+    //uint8_t zone_group;
+    //uint8_t self_config_status;
+    //uint8_t self_config_levels_completed;
+    //uint8_t reserved5[2];
+    //uint64_t self_config_sas_address;
+    //uint32_t programmed_phy_cap;
+    //uint32_t current_phy_cap;
+    //uint32_t attached_phy_cap;
+    //uint8_t reserved6[6];
+    //uint8_t nego_physical_link_rate;
+    //uint8_t reserved7;
+    //uint8_t default_zpsd;
+    //uint8_t reserved8;
+    //uint8_t reserved9;
+    //uint8_t default_zone_group;
+    //uint8_t saved_zpsd;
+    //uint8_t reserved10;
+    //uint8_t reserved11;
+    //uint8_t saved_zone_group;
+    //uint8_t shadow_zpsd;
+    //uint8_t reserved12;
+    //uint8_t reserved13;
+    //uint8_t shadow_zone_group;
+    //uint8_t device_slot_number;
+    //uint8_t device_slot_group_number;
+    //uint8_t device_slot_group_output_connector[6];
+} __attribute__((packed));
+
+static void dump_smp_frame(const uint8_t *p, int len)
+{
+    int i = 0;
+    char buf[1024] = {0};
+    int buf_len = 0;
+
+    buf_len += sprintf(buf, "smp frame buffer: \n");
+
+    for (i = 0; i < len; i++) {
+        if (i && (i % 8 ) == 0) {
+            buf_len += sprintf(buf + buf_len, "\n");
+        }
+        buf_len += sprintf(buf + buf_len, "%02x ", p[i]);
+    }
+    buf_len += sprintf(buf + buf_len, "\n");
+    trace_mpt3sas_dump_buffer(buf);
+}
+
 static void mpt3sas_handle_smp_passthrough(MPT3SASState *s, uint16_t smid, uint8_t msix_index, Mpi2SmpPassthroughRequest_t *req)
 {
     Mpi2SmpPassthroughReply_t reply;
     uint32_t datalen = 0;
-    uint64_t pa = 0;
+    //uint64_t pa = 0;
     uint8_t smp_frame_type = 0;
     uint8_t function = 0;
+    uint64_t data_in = 0;
+    uint64_t data_out = 0;
+    Mpi2IeeeSgeSimple64_t *sgl = NULL;
+    uint8_t flags = 0;
 
     trace_mpt3sas_handle_smp_passthrough(req->PassthroughFlags, req->PhysicalPort, req->RequestDataLength,
             req->SGLFlags, req->SASAddress);
     memset(&reply, 0, sizeof(reply));
 
-    if ((req->SGLFlags & MPI2_SGLFLAGS_SGL_TYPE_MASK) == MPI2_SGLFLAGS_SGL_TYPE_MPI) {
-        uint32_t flags_and_length = req->SGL.MpiSimple.FlagsLength;
-        uint8_t flags = (flags_and_length) >> 24;
-        datalen = flags_and_length & MPI2_SGE_LENGTH_MASK;
-        if (flags & MPI2_SGE_FLAGS_64_BIT_ADDRESSING) {
-            pa = req->SGL.MpiSimple.u.Address64;
-        } else {
-            pa = req->SGL.MpiSimple.u.Address32;
-        }
-    } else if ((req->SGLFlags & MPI2_SGLFLAGS_SGL_TYPE_MASK) == MPI2_SGLFLAGS_SGL_TYPE_IEEE64)  {
-        datalen = req->SGL.IeeeSimple.Simple64.Length;
-        pa = req->SGL.IeeeSimple.Simple64.Address;
+    // first element for request in //read
+    sgl = (Mpi2IeeeSgeSimple64_t *)&req->SGL;
+    flags = sgl->Flags;
+    datalen = sgl->Length;
+    data_in = sgl->Address;
+
+    sgl = (Mpi2IeeeSgeSimple64_t *)((uint8_t *)&req->SGL + 16);
+    flags = sgl->Flags;
+    //write
+    if ((flags & 0xc0) ==  MPI25_IEEE_SGE_FLAGS_END_OF_LIST) {
+        datalen = sgl->Length;
+        data_out = sgl->Address;
     }
+
 
     // Read SMP request
 
     // read 2 bytes to determine what SMP frame is
-    smp_frame_type = ldub_pci_dma(PCI_DEVICE(s), pa);
-    function = ldub_pci_dma(PCI_DEVICE(s), pa + 1);
+    smp_frame_type = ldub_pci_dma(PCI_DEVICE(s), data_in);
+    function = ldub_pci_dma(PCI_DEVICE(s), data_in + 1);
 
-    trace_mpt3sas_handle_smp_frame(smp_frame_type, function, pa, datalen);
+    trace_mpt3sas_handle_smp_frame(smp_frame_type, function, data_in, datalen);
     if (smp_frame_type == 0x40) {
         switch (function) {
-            case 0x1: // REPORT MANUFACTURE
+            case SMP_REPORT_GENERAL:
+            {
+                struct rep_general_req rgreq;
+                struct rep_general_reply rgreply;
+
+                pci_dma_read(PCI_DEVICE(s), data_in, &rgreq, sizeof(rgreq));
+                dump_smp_frame((uint8_t *)&rgreq, sizeof(rgreq));
+
+                memset(&rgreply, 0, sizeof(rgreply));
+                rgreply.smp_frame_type = 0x41;
+                rgreply.function = SMP_REPORT_GENERAL;
+                rgreply.change_count = 0x1;
+                rgreply.num_phys = s->expander.all_phys;
+                rgreply.t2t_supp = 0x1;
+
+                pci_dma_write(PCI_DEVICE(s), data_out, &rgreply, sizeof(rgreply));
+             break;
+            }
+            case SMP_REPORT_MANUFACTURE: // REPORT MANUFACTURE
             {
                 struct rep_manu_request rmreq;
                 struct rep_manu_reply rmrep;
                 memset(&rmreq, 0, sizeof(rmreq));
 
                 // read the whole smp frame
-                pci_dma_read(PCI_DEVICE(s), pa, &rmreq, sizeof(rmreq));
+                pci_dma_read(PCI_DEVICE(s), data_in, &rmreq, sizeof(rmreq));
 
                 memset(&rmrep, 0, sizeof(rmrep));
 
@@ -2441,9 +2614,92 @@ static void mpt3sas_handle_smp_passthrough(MPT3SASState *s, uint16_t smid, uint8
                 strcpy((void *)rmrep.product_rev, "001");
 
                 // write the response to host through DMA
-                pci_dma_write(PCI_DEVICE(s), pa + sizeof(rmreq), &rmrep, sizeof(rmrep));
+                pci_dma_write(PCI_DEVICE(s), data_out, &rmrep, sizeof(rmrep));
                 break;
             }
+            case SMP_DISCOVER: // DISCOVER
+            {
+                struct discover_request disreq;
+                struct discover_reply disrep;
+                uint8_t phy_id = 0;
+                uint8_t expander_idx = 0;
+                uint32_t target_scsi_id = 0;
+                SCSIDevice *sdev = NULL;
+
+                memset(&disrep, 0, sizeof(disrep));
+
+                // read the whole smp frame
+                pci_dma_read(PCI_DEVICE(s), data_in, &disreq, sizeof(disreq));
+
+                dump_smp_frame((uint8_t *)&disreq, sizeof(disreq));
+
+                disrep.smp_frame_type = 0x41;
+                disrep.function = 0x10;
+                disrep.function_result = SMP_FUNCTION_ACCEPTED;
+                //disrep.response_length = 0x1c; //disreq.allocated_request_length;
+
+                phy_id = disreq.phy_id;
+                if (phy_id > s->expander.all_phys) {
+                    disrep.function_result = PHY_DOES_NOT_EXIST;
+                }
+
+                disrep.phy_id = phy_id;
+
+                // SAS expander address
+                *(uint64_t *)disrep.sas_addr = cpu_to_be64(req->SASAddress);
+
+                if ((phy_id >= s->expander.upstream_start_phy) &&
+                        (phy_id < s->expander.upstream_start_phy + s->expander.upstream_phys)) {
+                    disrep.attached_dev_type = MPI2_SAS_DEVICE_INFO_END_DEVICE & 0x7;
+                    disrep.linkrate = MPI25_SAS_NEG_LINK_RATE_12_0 & 0xF;
+                    disrep.iproto = ((MPI2_SAS_DEVICE_INFO_SSP_INITIATOR | MPI2_SAS_DEVICE_INFO_STP_INITIATOR | MPI2_SAS_DEVICE_INFO_SMP_INITIATOR) >> 4) & 0x7;
+
+                    // HBA controller SAS address
+                    *(uint64_t *)disrep.attached_sas_addr = cpu_to_be64(s->sas_address);
+
+                    disrep.hmin_linkrate = MPI2_SAS_HWRATE_MIN_RATE_1_5;
+                    disrep.pmin_linkrate = MPI2_SAS_PRATE_MIN_RATE_1_5;
+                    disrep.hmax_linkrate = MPI25_SAS_HWRATE_MAX_RATE_12_0 >> 4;
+                    disrep.pmax_linkrate = MPI25_SAS_PRATE_MIN_RATE_12_0 >> 4;
+                    disrep.change_count = 0x1;
+                    disrep.routing_attr = MPI2_SAS_PHYINFO_TABLE_ROUTING >> 4;
+                    disrep.attached_phy_id = phy_id - 4;
+                } else if (phy_id >= s->expander.expansion_start_phy && phy_id < s->expander.expansion_start_phy + s->expander.expansion_phys) {
+                    disrep.attached_dev_type = MPI2_SAS_DEVICE_INFO_NO_DEVICE;
+                } else {
+                    expander_idx = req->SASAddress - MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR;
+
+                    target_scsi_id = EXP_PHY_TO_SCSI_ID(s, expander_idx, phy_id);
+
+                    sdev = scsi_device_find(&s->bus, 0, target_scsi_id, 0);
+
+                    if (NULL == sdev) {
+                        disrep.attached_dev_type = MPI2_SAS_DEVICE_INFO_NO_DEVICE;
+                    } else {
+                        disrep.attached_dev_type = MPI2_SAS_DEVICE_INFO_END_DEVICE;
+                        disrep.attached_phy_id = 0;
+                        disrep.linkrate = MPI25_SAS_NEG_LINK_RATE_12_0 & 0xF;
+                        disrep.hmin_linkrate = MPI2_SAS_HWRATE_MIN_RATE_1_5;
+                        disrep.pmin_linkrate = MPI2_SAS_PRATE_MIN_RATE_1_5;
+                        disrep.hmax_linkrate = MPI25_SAS_HWRATE_MAX_RATE_12_0 >> 4;
+                        disrep.pmax_linkrate = MPI25_SAS_PRATE_MIN_RATE_12_0 >> 4;
+                        disrep.tproto = MPI2_SAS_DEVICE_INFO_SSP_TARGET >> 8;
+                        *(uint64_t *)disrep.attached_sas_addr = cpu_to_be64(sdev->wwn);
+                        disrep.change_count = 0x1;
+                        disrep.routing_attr = MPI2_SAS_PHYINFO_TABLE_ROUTING >> 4;
+                        if (sdev->type == TYPE_ENCLOSURE) {
+                            disrep.routing_attr = MPI2_SAS_PHYINFO_DIRECT_ROUTING;
+                            disrep.iproto = (MPI2_SAS_DEVICE_INFO_SSP_INITIATOR >> 4) & 0x7;
+                            disrep.virtual = 0x1;
+                            disrep.attached_phy_id = phy_id;
+                        }
+                    }
+                }
+
+               //write response back
+                pci_dma_write(PCI_DEVICE(s), data_out, &disrep, sizeof(disrep));
+                break;
+            }    
             default:
                 trace_mpt3sas_unhandled_smp_frame(smp_frame_type, function);
                 break;
@@ -2822,9 +3078,11 @@ static void mpt3sas_handle_request(MPT3SASState *s)
     }
 
     addr = s->system_request_frame_base_address + (s->system_request_frame_size * 4) * smid;
+    printf("request_frame_size: %d, smid: %d\n", s->system_request_frame_size, smid);
 
     // Read request header from system request message frames queue
     pci_dma_read(pci, addr, req, sizeof(MPI2RequestHeader_t));
+    printf("size of MPI2HDR: %lu\n", sizeof(MPI2RequestHeader_t));
 
     trace_mpt3sas_handle_request(request_desc, smid, msix_index, hdr->Function, mpi2_request_sizes[hdr->Function]);
     if (hdr->Function < ARRAY_SIZE(mpi2_request_sizes) &&
@@ -2836,11 +3094,14 @@ static void mpt3sas_handle_request(MPT3SASState *s)
         // FIXME here
         if (hdr->Function == MPI2_FUNCTION_FW_UPLOAD) {
             size += 4;
+        } else if (hdr->Function == MPI2_FUNCTION_SMP_PASSTHROUGH) {
+            size += 16;
         }
 
         assert(size <= MPT3SAS_REQUEST_FRAME_SIZE * 4);
         pci_dma_read(pci, addr + sizeof(hdr), &req[sizeof(hdr)],
                 size - sizeof(hdr));
+        printf("size of Rest of req: %lu\n", size - sizeof(hdr));
         if (size > 0) {
             uint32_t i = 0;
             int buf_len = 0;
@@ -3346,23 +3607,22 @@ static void mpt3sas_init_expander(MPT3SASState *s)
 
     s->expander.all_phys += 1; // Leave one virtual phy for enclosure target
     
+    s->expander.expansion_start_phy = 0;
+
     if (!s->expander.upstream_phys || (s->expander.upstream_phys > MPT3SAS_NUM_PHYS / s->expander.count))
         s->expander.upstream_phys = 4;
 
-    // Expander PHY0-PHY3 <----> HBA PHY0-PHY3
-    // Expander PHY4-PHY7 <----> [ X X X X ]
+    s->expander.expansion_phys = 4;
+
+    // Expander PHY0-PHY3 (expansion port) <----> [ X X X X ]
+    // Expander PHY4-PHY7 (primary port) <----> HBA PHY0-PHY3
     //
     if (!s->expander.downstream_phys)
-        s->expander.downstream_phys = s->expander.all_phys - MPT3SAS_NUM_PHYS; // Leave 4 PHYs for expansion port
+        s->expander.downstream_phys = s->expander.all_phys - s->expander.upstream_phys - s->expander.expansion_phys; 
 
-    if (s->expander.upstream_start_phy > s->expander.all_phys - MPT3SAS_NUM_PHYS - 1)
-        s->expander.upstream_start_phy = s->expander.all_phys - MPT3SAS_NUM_PHYS - 1;
-
-    if (s->expander.upstream_start_phy == s->expander.downstream_start_phy ||
-        ((s->expander.upstream_start_phy + s->expander.upstream_phys) > s->expander.all_phys - 1)) {
-        s->expander.upstream_start_phy = 0;
-        s->expander.downstream_start_phy = MPT3SAS_NUM_PHYS;
-    }
+    s->expander.upstream_start_phy = s->expander.expansion_start_phy + s->expander.expansion_phys;
+    if (!s->expander.downstream_start_phy)
+        s->expander.downstream_start_phy = s->expander.upstream_start_phy + s->expander.upstream_phys;
 
     trace_mpt3sas_init_expander(s->expander.count, s->expander.all_phys, s->expander.upstream_start_phy, s->expander.upstream_phys,
                                 s->expander.downstream_start_phy, s->expander.downstream_phys);

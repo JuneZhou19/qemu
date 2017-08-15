@@ -9,6 +9,9 @@
 
 #include "hw/boards.h"  // for current_machine
 
+#define DPRINTF(fmt, ...) \
+    do { struct timeval _now; gettimeofday(&_now, NULL); qemu_log_mask(LOG_TRACE, "[%zd.%06zd] mpt3sas: " fmt, (size_t)_now.tv_sec, (size_t)_now.tv_usec, ##__VA_ARGS__); } while (0)
+
 /* prototypes */
 fbe_status_t enclosure_status_diagnostic_page_build_device_slot_status_elements(
     fbe_u8_t *device_slot_status_elements_start_ptr, 
@@ -5008,7 +5011,7 @@ emc_statistics_stat_page_build_device_slot_stats(terminator_sas_virtual_phy_info
             status = sas_virtual_phy_get_drive_slot_to_phy_mapping(j, &mapped_phy_id, encl_type);
             if (status != FBE_STATUS_OK)
             {
-                printf("%s sas_virtual_phy_get_drive_slot_to_phy_mapping failed!\n", __FUNCTION__);
+                DPRINTF("%s sas_virtual_phy_get_drive_slot_to_phy_mapping failed!\n", __FUNCTION__);
                 return status;
             }
             if(mapped_phy_id == i) // it is drive slot phy
@@ -5170,7 +5173,7 @@ static fbe_status_t addl_elem_stat_page_build_device_slot_elements(terminator_sa
         // convert to bigendian
         dev_phy_desc_ptr->sas_address = bswap64(dev_phy_desc_ptr->sas_address);
 
-        printf("%s: encl_type:%d max_drives:%d slot_number:%d phy_id:%d\n", 
+        DPRINTF("%s: encl_type:%d max_drives:%d slot_number:%d phy_id:%d\n", 
                              __FUNCTION__, encl_type, max_drive_slots, slot_number, 
                              dev_phy_desc_ptr->phy_id);
 
@@ -5185,6 +5188,7 @@ static fbe_status_t addl_elem_stat_page_build_device_slot_elements(terminator_sa
             FBE_ESES_ARRAY_DEV_SLOT_PROT_SPEC_INFO_HEADER_SIZE + 
             sizeof(ses_array_dev_phy_desc_struct)) ;
     }
+
     *status_elements_end_ptr = (uint8_t *)addl_elem_stat_desc_ptr;
     status = FBE_STATUS_OK;
     return(status);
@@ -5712,6 +5716,9 @@ static fbe_status_t addl_elem_stat_page_build_sas_exp_elements(terminator_sas_vi
 
     addl_elem_stat_desc_ptr = (ses_addl_elem_stat_desc_hdr_struct *)status_elements_start_ptr; 
     memset(addl_elem_stat_desc_ptr, 0, sizeof(ses_addl_elem_stat_desc_hdr_struct));
+
+
+
     // only SAS for now (6 is for SAS)
     addl_elem_stat_desc_ptr->protocol_id = 0x6; 
     addl_elem_stat_desc_ptr->eip = 0x1;
@@ -5730,6 +5737,7 @@ static fbe_status_t addl_elem_stat_page_build_sas_exp_elements(terminator_sas_vi
 
     sas_exp_prot_spec_info_ptr->desc_type = 0x1;
 
+    DPRINTF("%s: num exp phy descs: %d, elem index 0x%d\n", __func__, sas_exp_prot_spec_info_ptr->num_exp_phy_descs, addl_elem_stat_desc_ptr->elem_index);
     status = addl_elem_stat_page_sas_exp_get_sas_address(s, &sas_exp_prot_spec_info_ptr->sas_address);
     if (status != FBE_STATUS_OK)
         return status;
@@ -5750,7 +5758,7 @@ static fbe_status_t addl_elem_stat_page_build_sas_exp_elements(terminator_sas_vi
             sas_exp_phy_desc_ptr->conn_elem_index = 0xFF;
             status = addl_elem_stat_page_sas_exp_phy_desc_get_other_elem_index_for_drive_phy(
                 s, drive_slot, &sas_exp_phy_desc_ptr->other_elem_index);
-		    printf("%s: encl_type:%d drive_slot:%d other_elem_index:%d status:0x%x\n", 
+		    DPRINTF("%s: encl_type:%d drive_slot:%d other_elem_index:%d status:0x%x\n", 
                              __FUNCTION__, encl_type, drive_slot,
                              sas_exp_phy_desc_ptr->other_elem_index,
                              status);
@@ -5767,7 +5775,7 @@ static fbe_status_t addl_elem_stat_page_build_sas_exp_elements(terminator_sas_vi
                 return status;
 
             status = addl_elem_stat_page_sas_exp_phy_desc_get_conn_elem_index_for_conn_phy(s, connector, connector_id, &sas_exp_phy_desc_ptr->conn_elem_index);
-            printf("%s: encl_type:%d connector:%d connector_id:%d elem_index:%d other_elem_index:%d\n", 
+            DPRINTF("%s: encl_type:%d connector:%d connector_id:%d elem_index:%d other_elem_index:%d\n", 
                              __FUNCTION__, encl_type, connector, connector_id, 
                              sas_exp_phy_desc_ptr->conn_elem_index,
                              sas_exp_phy_desc_ptr->other_elem_index);
@@ -5777,7 +5785,7 @@ static fbe_status_t addl_elem_stat_page_build_sas_exp_elements(terminator_sas_vi
         else
         {
 
-            printf("%s: encl_type:%d phy:%d is not a drive or connector, max:%d\n", 
+            DPRINTF("%s: encl_type:%d phy:%d is not a drive or connector, max:%d\n", 
                              __FUNCTION__, encl_type, i, sas_exp_prot_spec_info_ptr->num_exp_phy_descs);
             //Ex: Phy 8 in Viper doesnot correspond to drive slot or connector.
             sas_exp_phy_desc_ptr->other_elem_index = 0xFF; 
@@ -5820,7 +5828,6 @@ fbe_status_t addl_elem_stat_page_build_stat_descriptors(terminator_sas_virtual_p
         next_status_element_set_ptr, status_elements_end_ptr, virtual_phy_handle);
     RETURN_ON_ERROR_STATUS;
  ***********************************************************************/
-
     status = FBE_STATUS_OK;
     return(status);    
 }

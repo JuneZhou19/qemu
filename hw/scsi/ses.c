@@ -342,6 +342,7 @@ static fbe_status_t build_additional_element_status_diagnostic_page(SCSIRequest 
         return status;
     }
     addl_elem_stat_page_hdr->pg_len = (uint16_t)(status_elements_end_ptr - (uint8_t *)(addl_elem_stat_page_hdr) - 4);
+    DPRINTF("%s:%d\n additional element status page length: %d\n", __func__, __LINE__, addl_elem_stat_page_hdr->pg_len);
     // Always return page length in big endian format as actual expander firmware does that.
     addl_elem_stat_page_hdr->pg_len = bswap16(addl_elem_stat_page_hdr->pg_len);
 
@@ -868,6 +869,8 @@ static void scsi_ses_realize(SCSIDevice *dev, Error **errp)
 
     /* initialize VPHY SAS Info */
     s->eses_sas_info = sas_virtual_phy_info_new(s->dae_type, s->qdev.wwn, s->side);
+
+    ((terminator_sas_virtual_phy_info_t *)s->eses_sas_info)->ses_dev = (void *)s;
 
     DPRINTF("%s:%d side %d\n", __func__, __LINE__, s->side);
     // Create a thread to maintain eses sas info

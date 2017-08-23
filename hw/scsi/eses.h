@@ -1974,11 +1974,55 @@ typedef struct ses_array_dev_slot_prot_spec_info_s
 }ses_array_dev_slot_prot_spec_info_struct;
 
 typedef struct ses_array_dev_phy_desc_s{
-    uint8_t ignored[12];    // Byte 0-11, will be defined later.
+    uint8_t           :4;  
+    uint8_t device_type:3;
+    uint8_t           :1; // Byte 7
+                    
+    uint8_t reserved0; // Byte 8
+    uint8_t           :1;  
+    uint8_t smp_initiator_port:1;
+    uint8_t stp_initiator_port:1;
+    uint8_t ssp_initiator_port:1;
+    uint8_t           :4; // Byte 9
+
+    uint8_t sata_device:1;
+    uint8_t smp_target_port:1;
+    uint8_t stp_target_port:1;
+    uint8_t ssp_target_port:1;
+    uint8_t                :3;  
+    uint8_t sata_port_selector:1; // Byte 10
+
+    uint64_t attached_sas_address; // Byte 11 
     uint64_t sas_address;   // Byte 12-19
     uint8_t phy_id;         // Byte 20
-    uint8_t reserved[7];    // Byte 21-27
+    uint8_t reserved1[7];    // Byte 21-27
 }ses_array_dev_phy_desc_struct;
+
+/******************************************************************************
+ * ESC ELectronics Protocol Specific Info  
+ * in the additional element status descriptor of the additional status page.
+ ******************************************************************************/
+typedef struct ses_esc_elec_prot_spec_info_s
+{
+    fbe_u8_t num_exp_phy_descs;  // Byte 0   
+    fbe_u8_t           : 6;     // Byte 1, bit 0-5
+    fbe_u8_t desc_type : 2;     // Byte 1, bit 6-7
+    fbe_u16_t reserved;         // byte 2-3
+    /* Expander Phy descriptor */
+}ses_esc_elec_prot_spec_info_struct;
+
+/******************************************************************************
+ * Expander Phy Descriptor in ESC ELectronics Protocol Specific Info  
+ * in the additional element status descriptor of the additional status page.
+ ******************************************************************************/
+typedef struct ses_esc_elec_exp_phy_desc_s{
+    fbe_u8_t phy_id;    // Byte 0
+    fbe_u8_t reserved;   // Byte 1
+    fbe_u8_t conn_elem_index;     // Byte 2
+    fbe_u8_t other_elem_index;    // Byte 3
+    fbe_u64_t sas_address; // Byte 4-11   
+}ses_esc_elec_exp_phy_desc_struct;
+
 
 /************************************
  * Power Supply Information Element
@@ -2116,6 +2160,7 @@ typedef struct terminator_sas_virtual_phy_info_s{
     // starting logging out and logging in LCC subenclosure in ms
     fbe_u32_t activate_time_intervel;
     fbe_u32_t reset_time_intervel;
+    void *ses_dev;
 } terminator_sas_virtual_phy_info_t;
 
 

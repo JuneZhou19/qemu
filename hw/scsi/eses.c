@@ -6,6 +6,8 @@
 #include "eses.h"
 
 #include "ses.h"
+#include "hw/pci/pci.h"
+#include "mpt3sas.h"
 
 #include "hw/boards.h"  // for current_machine
 
@@ -5085,9 +5087,26 @@ static fbe_status_t addl_elem_stat_page_dev_slot_phy_desc_get_sas_addr(
     fbe_u64_t *sas_address)
 {
     fbe_status_t status = FBE_STATUS_OK;
-
+    fbe_u8_t phy_id;
+    fbe_u8_t max_phys;
     *sas_address = 0;
-    //status = terminator_get_sas_address_by_slot_number_and_virtual_phy_handle(virtual_phy_handle, dev_slot_num, sas_address);
+    uint16_t scsi_id = 0;
+    SCSIDevice *d = NULL;
+    SCSISESState *s = (SCSISESState *)virtual_phy_handle->ses_dev;
+    SCSIBus *bus = scsi_bus_from_device((SCSIDevice*)s);
+
+    status = sas_virtual_phy_get_drive_slot_to_phy_mapping(dev_slot_num, &phy_id, virtual_phy_handle->enclosure_type, virtual_phy_handle->side);
+    RETURN_ON_ERROR_STATUS;
+
+    status = sas_virtual_phy_max_phys(virtual_phy_handle->enclosure_type, &max_phys, virtual_phy_handle->side);
+    RETURN_ON_ERROR_STATUS;
+    
+    scsi_id = phy_id + virtual_phy_handle->side * (max_phys + 1);
+
+    if ((d = scsi_device_find(bus, 0, scsi_id, 0)) != NULL) {
+        *sas_address = d->wwn;
+    }
+
     return(status);
 }
 
@@ -5167,6 +5186,9 @@ static fbe_status_t addl_elem_stat_page_build_device_slot_elements(terminator_sa
             return(status);
         }
 
+        dev_phy_desc_ptr->attached_sas_address = bswap64(MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR + s->side);
+        DPRINTF("%s:%d attached sas address 0x%lx\n", __func__, __LINE__, cpu_to_be64(dev_phy_desc_ptr->attached_sas_address));
+
         // this is sas address of the drive physical slot i;
         if(addl_elem_stat_page_dev_slot_phy_desc_get_sas_addr(s, i, &dev_phy_desc_ptr->sas_address) !=
             FBE_STATUS_OK)
@@ -5176,9 +5198,9 @@ static fbe_status_t addl_elem_stat_page_build_device_slot_elements(terminator_sa
         // convert to bigendian
         dev_phy_desc_ptr->sas_address = bswap64(dev_phy_desc_ptr->sas_address);
 
-        DPRINTF("%s: encl_type:%d max_drives:%d slot_number:%d phy_id:%d\n", 
+        DPRINTF("%s: encl_type:%d max_drives:%d slot_number:%d phy_id:%d sas_address: 0x%lx\n", 
                              __FUNCTION__, encl_type, max_drive_slots, slot_number, 
-                             dev_phy_desc_ptr->phy_id);
+                             dev_phy_desc_ptr->phy_id, dev_phy_desc_ptr->sas_address);
 
 
 
@@ -5223,10 +5245,15 @@ static bool sas_virtual_phy_phy_corresponds_to_drive_slot(terminator_sas_virtual
     return(FALSE);
 }
 
-//TODO
 static fbe_status_t addl_elem_stat_page_sas_exp_get_sas_address(terminator_sas_virtual_phy_info_t *s, uint64_t *sas_address)
 {
-    *sas_address = 0;
+    *sas_address = MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR + s->side;
+    return FBE_STATUS_OK;
+}
+
+static fbe_status_t addl_elem_stat_page_sas_peer_exp_get_sas_address(terminator_sas_virtual_phy_info_t *s, uint64_t *sas_address)
+{
+    *sas_address = MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR + !s->side;
     return FBE_STATUS_OK;
 }
 
@@ -5256,6 +5283,34 @@ static fbe_status_t addl_elem_stat_page_sas_exp_get_elem_index(terminator_sas_vi
     status = FBE_STATUS_OK;
     return(status);
 }
+
+static fbe_status_t addl_elem_stat_page_sas_peer_exp_get_elem_index(terminator_sas_virtual_phy_info_t *s, uint8_t *elem_index)
+{
+    fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;    
+    terminator_sp_id_t spid;
+
+    *elem_index = 0;
+
+    status =  fbe_terminator_api_get_sp_id(s, &spid);
+
+    //Get from configuration page parsing routines.
+    status = config_page_get_start_elem_index_in_stat_page(s,
+                                                           SES_SUBENCL_TYPE_LCC,
+                                                           !spid, 
+                                                           SES_ELEM_TYPE_SAS_EXP, 
+                                                           FALSE,
+                                                           0,
+                                                           FALSE,
+                                                           NULL,
+                                                           elem_index);
+
+    if (status != FBE_STATUS_OK)
+        return status;
+    
+    status = FBE_STATUS_OK;
+    return(status);
+}
+
 
 static fbe_status_t  addl_elem_stat_page_sas_exp_phy_desc_get_other_elem_index_for_drive_phy(
     terminator_sas_virtual_phy_info_t *s, uint8_t drive_slot, uint8_t *elem_index)
@@ -5745,6 +5800,114 @@ static fbe_status_t addl_elem_stat_page_build_sas_exp_elements(terminator_sas_vi
     status = addl_elem_stat_page_sas_exp_get_sas_address(s, &sas_exp_prot_spec_info_ptr->sas_address);
     if (status != FBE_STATUS_OK)
         return status;
+
+    // convert to big endian
+    sas_exp_prot_spec_info_ptr->sas_address = 
+        bswap64(sas_exp_prot_spec_info_ptr->sas_address);
+
+    sas_exp_phy_desc_ptr = (ses_sas_exp_phy_desc_struct *)
+        ((uint8_t *)sas_exp_prot_spec_info_ptr + FBE_ESES_SAS_EXP_PROT_SPEC_INFO_HEADER_SIZE);
+    // fill in the phy descs. As per recent changes to ESES, T10 spec it was
+    // decided that the phy's are arranged in order as per their SAS phy 
+    // identifiers(logical), which is too much an assumption :(
+    
+    for(i=0; i < sas_exp_prot_spec_info_ptr->num_exp_phy_descs; i++)
+    {
+        memset(sas_exp_phy_desc_ptr, 0, sizeof(ses_sas_exp_phy_desc_struct));
+        if(sas_virtual_phy_phy_corresponds_to_drive_slot(s, i, &drive_slot, encl_type))
+        {         
+            sas_exp_phy_desc_ptr->conn_elem_index = 0xFF;
+            status = addl_elem_stat_page_sas_exp_phy_desc_get_other_elem_index_for_drive_phy(
+                s, drive_slot, &sas_exp_phy_desc_ptr->other_elem_index);
+            DPRINTF("%s: encl_type:%d drive_slot:%d other_elem_index:%d status:0x%x\n", 
+                             __FUNCTION__, encl_type, drive_slot,
+                             sas_exp_phy_desc_ptr->other_elem_index,
+                             status);
+            if (status != FBE_STATUS_OK)
+                return status;
+        }
+        else if(sas_virtual_phy_phy_corresponds_to_connector(i, &connector, &connector_id, encl_type, s->side))
+        {
+            // The connector is a number between 0 and max_single_lane_port_conns, so the resulting
+            // element index should be properly calculated.
+            status = addl_elem_stat_page_sas_exp_phy_desc_get_other_elem_index_for_conn_phy(
+                 s, connector, connector_id, &sas_exp_phy_desc_ptr->other_elem_index);
+            if (status != FBE_STATUS_OK)
+                return status;
+
+            status = addl_elem_stat_page_sas_exp_phy_desc_get_conn_elem_index_for_conn_phy(s, connector, connector_id, &sas_exp_phy_desc_ptr->conn_elem_index);
+            DPRINTF("%s: encl_type:%d connector:%d connector_id:%d elem_index:%d other_elem_index:%d\n", 
+                             __FUNCTION__, encl_type, connector, connector_id, 
+                             sas_exp_phy_desc_ptr->conn_elem_index,
+                             sas_exp_phy_desc_ptr->other_elem_index);
+            if (status != FBE_STATUS_OK)
+                return status;
+        } 
+        else
+        {
+
+            DPRINTF("%s: encl_type:%d phy:%d is not a drive or connector, max:%d\n", 
+                             __FUNCTION__, encl_type, i, sas_exp_prot_spec_info_ptr->num_exp_phy_descs);
+            //Ex: Phy 8 in Viper doesnot correspond to drive slot or connector.
+            sas_exp_phy_desc_ptr->other_elem_index = 0xFF; 
+            sas_exp_phy_desc_ptr->conn_elem_index = 0xFF;
+
+        }
+
+        sas_exp_phy_desc_ptr++;      
+    }
+
+    //sas_exp_phy_desc_ptr->conn_elem_index = 0xFF;
+    //sas_exp_phy_desc_ptr->other_elem_index = 0xFF;
+    //sas_exp_phy_desc_ptr++;
+
+    *status_elements_end_ptr = (uint8_t *)sas_exp_phy_desc_ptr;
+    addl_elem_stat_desc_ptr->desc_len =(uint8_t) (*status_elements_end_ptr - status_elements_start_ptr - 2);
+    status = FBE_STATUS_OK;
+    return(status);        
+}
+
+static fbe_status_t addl_elem_stat_page_build_sas_peer_exp_elements(terminator_sas_virtual_phy_info_t *s,
+    uint8_t *status_elements_start_ptr, 
+    uint8_t **status_elements_end_ptr)
+{
+    fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
+    ses_addl_elem_stat_desc_hdr_struct *addl_elem_stat_desc_ptr = NULL;
+    ses_sas_exp_prot_spec_info_struct *sas_exp_prot_spec_info_ptr = NULL;
+    ses_sas_exp_phy_desc_struct *sas_exp_phy_desc_ptr = NULL;
+    uint8_t drive_slot = 0, connector = 0, i;
+    uint8_t connector_id = 0;
+    fbe_sas_enclosure_type_t           encl_type = s->enclosure_type;
+
+    addl_elem_stat_desc_ptr = (ses_addl_elem_stat_desc_hdr_struct *)status_elements_start_ptr; 
+    memset(addl_elem_stat_desc_ptr, 0, sizeof(ses_addl_elem_stat_desc_hdr_struct));
+
+
+
+    // only SAS for now (6 is for SAS)
+    addl_elem_stat_desc_ptr->protocol_id = 0x6; 
+    addl_elem_stat_desc_ptr->eip = 0x1;
+
+    //addl_elem_stat_desc_ptr->desc_len = sizeof(ses_esc_elec_prot_spec_info_struct) + 23*sizeof(ses_esc_elec_exp_phy_desc_struct) + 2;
+
+    status = addl_elem_stat_page_sas_peer_exp_get_elem_index(s, &addl_elem_stat_desc_ptr->elem_index);
+    if (status != FBE_STATUS_OK)
+        return status;
+
+    sas_exp_prot_spec_info_ptr = (ses_sas_exp_prot_spec_info_struct *)
+        ((uint8_t *)addl_elem_stat_desc_ptr + FBE_ESES_ADDL_ELEM_STATUS_DESC_HDR_SIZE );
+
+    status = sas_virtual_phy_max_phys(encl_type, &sas_exp_prot_spec_info_ptr->num_exp_phy_descs, !s->side);
+    if (status != FBE_STATUS_OK)
+        return status;
+
+    sas_exp_prot_spec_info_ptr->desc_type = 0x1;
+
+    DPRINTF("%s: num exp phy descs: %d, elem index 0x%d\n", __func__, sas_exp_prot_spec_info_ptr->num_exp_phy_descs, addl_elem_stat_desc_ptr->elem_index);
+    status = addl_elem_stat_page_sas_peer_exp_get_sas_address(s, &sas_exp_prot_spec_info_ptr->sas_address);
+    if (status != FBE_STATUS_OK)
+        return status;
+
     // convert to big endian
     sas_exp_prot_spec_info_ptr->sas_address = 
         bswap64(sas_exp_prot_spec_info_ptr->sas_address);
@@ -5805,6 +5968,120 @@ static fbe_status_t addl_elem_stat_page_build_sas_exp_elements(terminator_sas_vi
     return(status);        
 }
 
+static fbe_status_t addl_elem_stat_page_esc_elec_phy_desc_get_other_elem_index(
+    terminator_sas_virtual_phy_info_t *info,
+    fbe_u8_t phy_id, fbe_u8_t *elem_index, fbe_sas_enclosure_type_t encl_type)
+{
+    fbe_u8_t drive_slot;
+
+    //Change in future. There should be a call again to addl_elem_stat_page_dev_slots_get_elem_index()
+    // when we obtain the corresponding phy slot.
+    if(sas_virtual_phy_phy_corresponds_to_drive_slot(info, phy_id, &drive_slot, encl_type))
+    {
+        *elem_index = drive_slot;
+        return(FBE_STATUS_OK);
+    }
+    return(FBE_STATUS_GENERIC_FAILURE);
+}
+
+static fbe_status_t addl_elem_stat_page_esc_electronics_get_elem_index(terminator_sas_virtual_phy_info_t *info, fbe_u8_t *elem_index)
+{
+    //we dont yet have esc elec elements in status page.
+    fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;    
+    terminator_sp_id_t spid;
+
+    *elem_index = 0;
+
+    status =  fbe_terminator_api_get_sp_id(info, &spid);
+
+    //Get from configuration page parsing routines.
+    status = config_page_get_start_elem_index_in_stat_page(info,
+                                                           SES_SUBENCL_TYPE_LCC,
+                                                           spid, 
+                                                           SES_ELEM_TYPE_ESC_ELEC, 
+                                                           FALSE,
+                                                           0,
+                                                           FALSE,
+                                                           NULL,
+                                                           elem_index);
+
+    if (status != FBE_STATUS_OK)
+        return status;
+
+    return(FBE_STATUS_OK);
+}
+
+
+static fbe_status_t addl_elem_stat_page_build_esc_electronics_elements(
+    terminator_sas_virtual_phy_info_t *info,
+    fbe_u8_t *status_elements_start_ptr, 
+    fbe_u8_t **status_elements_end_ptr)
+{
+    fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
+    ses_addl_elem_stat_desc_hdr_struct *addl_elem_stat_desc_ptr = NULL;
+    ses_esc_elec_prot_spec_info_struct *esc_elec_prot_spec_info_ptr = NULL;
+    ses_esc_elec_exp_phy_desc_struct *esc_elec_exp_phy_desc_ptr = NULL;
+    fbe_u8_t i, drive_slot;
+    fbe_sas_enclosure_type_t encl_type = info->enclosure_type;
+    fbe_u8_t max_phys;
+
+    addl_elem_stat_desc_ptr = (ses_addl_elem_stat_desc_hdr_struct *)status_elements_start_ptr; 
+    memset(addl_elem_stat_desc_ptr, 0, sizeof(ses_addl_elem_stat_desc_hdr_struct));
+    // only SAS for now (6 is for SAS)
+    addl_elem_stat_desc_ptr->protocol_id = 0x6; 
+    addl_elem_stat_desc_ptr->eip = 0x1;
+
+    //addl_elem_stat_desc_ptr->desc_len = (fbe_u8_t) (sizeof(ses_esc_elec_prot_spec_info_struct) + 23*sizeof(ses_esc_elec_exp_phy_desc_struct) + 2);
+
+    //Ther element index should be changed once we get the configuration diagnostic page offsets
+    // For esc electronics elements this is invalid as we dont return esc elements in the status 
+    // page, yet. Even if we return there is only one ESC electronics element.
+    status = addl_elem_stat_page_esc_electronics_get_elem_index(info, &addl_elem_stat_desc_ptr->elem_index);
+    RETURN_ON_ERROR_STATUS;
+
+
+    esc_elec_prot_spec_info_ptr = (ses_esc_elec_prot_spec_info_struct *)
+        ((fbe_u8_t *)addl_elem_stat_desc_ptr + FBE_ESES_ADDL_ELEM_STATUS_DESC_HDR_SIZE );
+    status = sas_virtual_phy_max_phys(encl_type, &max_phys, info->side);
+    RETURN_ON_ERROR_STATUS;
+    esc_elec_prot_spec_info_ptr->num_exp_phy_descs = 1;
+    esc_elec_prot_spec_info_ptr->desc_type = 0x1;
+
+    esc_elec_exp_phy_desc_ptr = (ses_esc_elec_exp_phy_desc_struct *)
+        ((fbe_u8_t *)esc_elec_prot_spec_info_ptr + FBE_ESES_ESC_ELEC_PROT_SPEC_INFO_HEADER_SIZE);
+
+    DPRINTF("%s:%d enclosure service controller electronic num exp phy descs %d element index %d\n", __func__, __LINE__, esc_elec_prot_spec_info_ptr->num_exp_phy_descs, addl_elem_stat_desc_ptr->elem_index);
+    // fill in the phy descs
+    //for(i=0; i < esc_elec_prot_spec_info_ptr->num_exp_phy_descs; i++)
+    {
+        memset(esc_elec_exp_phy_desc_ptr, 0, sizeof(ses_esc_elec_exp_phy_desc_struct));
+        esc_elec_exp_phy_desc_ptr->phy_id = max_phys;
+        //if(!sas_virtual_phy_phy_corresponds_to_drive_slot(info, i, &drive_slot, encl_type))
+        //{
+        //    esc_elec_exp_phy_desc_ptr->conn_elem_index = 0xFF; // fill this once connector elements filled in stat page
+        //    esc_elec_exp_phy_desc_ptr->other_elem_index = 0xFF;
+        //}
+        //else
+        {
+
+        // for the phys not mapped to drive slots this will always be invalid.
+            esc_elec_exp_phy_desc_ptr->conn_elem_index = 0xFF;
+            esc_elec_exp_phy_desc_ptr->other_elem_index = 0xFF;
+            //status = addl_elem_stat_page_esc_elec_phy_desc_get_other_elem_index(info,
+            //    esc_elec_exp_phy_desc_ptr->phy_id, &esc_elec_exp_phy_desc_ptr->other_elem_index, encl_type);
+            RETURN_ON_ERROR_STATUS;
+        }       
+        //ignored the sas address field here.
+        //....
+        esc_elec_exp_phy_desc_ptr++;      
+    }
+    *status_elements_end_ptr = (fbe_u8_t *)esc_elec_exp_phy_desc_ptr;
+    addl_elem_stat_desc_ptr->desc_len = (fbe_u8_t) (*status_elements_end_ptr - status_elements_start_ptr - 2);
+
+    status = FBE_STATUS_OK;
+    return(status);    
+}
+
 fbe_status_t addl_elem_stat_page_build_stat_descriptors(terminator_sas_virtual_phy_info_t *info,
     uint8_t *status_elements_start_ptr, 
     uint8_t **status_elements_end_ptr)
@@ -5818,6 +6095,7 @@ fbe_status_t addl_elem_stat_page_build_stat_descriptors(terminator_sas_virtual_p
         return status;
 
     next_status_element_set_ptr = (*status_elements_end_ptr);
+
     status = addl_elem_stat_page_build_sas_exp_elements(info, 
         next_status_element_set_ptr, status_elements_end_ptr);
     if (status != FBE_STATUS_OK)
@@ -5826,13 +6104,20 @@ fbe_status_t addl_elem_stat_page_build_stat_descriptors(terminator_sas_virtual_p
 /************************************************************************
  * Ignore ESC electronics elements as now all their functionality
  * was decided to transfer to SAS Exp elements.
- ***********************************************************************
-    next_status_element_set_ptr = (*status_elements_end_ptr);
-    status = addl_elem_stat_page_build_esc_electronics_elements(
-        next_status_element_set_ptr, status_elements_end_ptr, virtual_phy_handle);
-    RETURN_ON_ERROR_STATUS;
  ***********************************************************************/
+    next_status_element_set_ptr = (*status_elements_end_ptr);
+    status = addl_elem_stat_page_build_esc_electronics_elements(info,
+        next_status_element_set_ptr, status_elements_end_ptr);
+    RETURN_ON_ERROR_STATUS;
+ /***********************************************************************/
     status = FBE_STATUS_OK;
+
+    next_status_element_set_ptr = (*status_elements_end_ptr);
+    status = addl_elem_stat_page_build_sas_peer_exp_elements(info, 
+        next_status_element_set_ptr, status_elements_end_ptr);
+    if (status != FBE_STATUS_OK)
+        return status;
+
     return(status);    
 }
 

@@ -2069,6 +2069,7 @@ typedef struct terminator_enclosure_firmware_new_rev_record_s
 typedef struct terminator_sas_virtual_phy_info_s{
     fbe_sas_address_t        device_address;
     fbe_sas_enclosure_type_t enclosure_type;
+    fbe_u8_t side;
 
     ses_stat_elem_array_dev_slot_struct *drive_slot_status;
     fbe_u8_t *drive_slot_insert_count;
@@ -2135,38 +2136,41 @@ typedef struct terminator_sas_virtual_phy_info_s{
      (((p) & 0x000000000000ff00) << 40) |   \
      (((p) & 0x00000000000000ff) << 56))
 
-fbe_status_t config_page_init(void);
+extern fbe_u8_t tabasco_config_page_with_ps[][1200];
+extern terminator_eses_config_page_info_t tabasco_config_page_info_with_ps[2];
+
+fbe_status_t config_page_init(fbe_u8_t side);
 fbe_status_t sanity_check_cdb_receive_diagnostic_results(fbe_u8_t *cdb_page_ptr, fbe_u8_t *page_code);
 fbe_status_t sas_enclosure_get_inq_data (fbe_sas_enclosure_type_t encl_type, terminator_sas_encl_inq_data_t **inq_data);
-fbe_status_t sas_virtual_phy_check_enclosure_type(fbe_sas_enclosure_type_t encl_type);
-fbe_status_t fbe_terminator_api_get_sp_id(terminator_sp_id_t *sp_id);
+fbe_status_t sas_virtual_phy_check_enclosure_type(fbe_sas_enclosure_type_t encl_type, terminator_sp_id_t spid);
+fbe_status_t fbe_terminator_api_get_sp_id(terminator_sas_virtual_phy_info_t *info, terminator_sp_id_t *sp_id);
 fbe_u32_t enclosure_status_diagnostic_page_size(fbe_sas_enclosure_type_t encl_type);
 fbe_sas_address_t sas_enclosure_calculate_virtual_phy_sas_address(SCSISESState *s);
 
-fbe_status_t sas_virtual_phy_max_phys(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_phys);
-fbe_status_t sas_virtual_phy_max_drive_slots(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_drive_slots);
-fbe_status_t sas_virtual_phy_max_display_characters(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_diplay_characters);
-fbe_status_t sas_virtual_phy_max_temp_sensor_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_temp_sensor_elems);
-fbe_status_t sas_virtual_phy_max_ps_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_ps_elems);
-fbe_status_t sas_virtual_phy_max_cooling_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_cooling_elems);
-fbe_status_t sas_virtual_phy_max_conns_per_lcc(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_conns);
-fbe_status_t sas_virtual_phy_max_conns_per_port(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_conns);
-fbe_status_t sas_virtual_phy_max_ext_cooling_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_ext_cooling_elems);
-fbe_status_t sas_virtual_phy_max_bem_cooling_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_bem_cooling_elems);
-fbe_status_t sas_virtual_phy_max_lccs(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_lccs);
-fbe_status_t sas_virtual_phy_max_ee_lccs(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_ee_lccs);
-fbe_status_t sas_virtual_phy_get_drive_slot_to_phy_mapping(fbe_u8_t drive_slot, fbe_u8_t *phy_id, fbe_sas_enclosure_type_t encl_type);
+fbe_status_t sas_virtual_phy_max_phys(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_phys, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_max_drive_slots(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_drive_slots, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_max_display_characters(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_diplay_characters, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_max_temp_sensor_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_temp_sensor_elems, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_max_ps_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_ps_elems, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_max_cooling_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_cooling_elems, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_max_conns_per_lcc(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_conns, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_max_conns_per_port(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_conns, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_max_ext_cooling_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_ext_cooling_elems, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_max_bem_cooling_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_bem_cooling_elems, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_max_lccs(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_lccs, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_max_ee_lccs(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_ee_lccs, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_get_drive_slot_to_phy_mapping(fbe_u8_t drive_slot, fbe_u8_t *phy_id, fbe_sas_enclosure_type_t encl_type, terminator_sp_id_t spid);
 fbe_status_t sas_virtual_phy_get_drive_power_down_count(terminator_sas_virtual_phy_info_t * info, fbe_u32_t slot_number, fbe_u8_t *power_down_count);
 fbe_status_t sas_virtual_phy_get_drive_slot_insert_count(terminator_sas_virtual_phy_info_t * info, fbe_u32_t slot_number, fbe_u8_t *insert_count);
-fbe_status_t sas_virtual_phy_max_single_lane_conns_per_port(fbe_sas_enclosure_type_t encl_type, uint8_t *max_conns);
-fbe_status_t sas_virtual_phy_max_conn_id_count(fbe_sas_enclosure_type_t encl_type, uint8_t *max_conn_id_count);
-fbe_status_t sas_virtual_phy_get_individual_conn_to_phy_mapping(uint8_t individual_lane, uint8_t connector_id, uint8_t *phy_id, fbe_sas_enclosure_type_t encl_type);
+fbe_status_t sas_virtual_phy_max_single_lane_conns_per_port(fbe_sas_enclosure_type_t encl_type, uint8_t *max_conns, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_max_conn_id_count(fbe_sas_enclosure_type_t encl_type, uint8_t *max_conn_id_count, terminator_sp_id_t spid);
+fbe_status_t sas_virtual_phy_get_individual_conn_to_phy_mapping(uint8_t individual_lane, uint8_t connector_id, uint8_t *phy_id, fbe_sas_enclosure_type_t encl_type, terminator_sp_id_t spid);
 fbe_status_t sas_virtual_phy_get_emcEnclStatus(terminator_sas_virtual_phy_info_t *info, ses_pg_emc_encl_stat_struct *emcEnclStatusPtr);
 fbe_status_t sas_virtual_phy_get_emcPsInfoStatus(terminator_sas_virtual_phy_info_t *info, ses_ps_info_elem_struct *emcPsInfoStatusPtr);
 fbe_status_t sas_virtual_phy_get_emcGeneralInfoDirveSlotStatus(terminator_sas_virtual_phy_info_t *info, ses_general_info_elem_array_dev_slot_struct *emcGeneralInfoDirveSlotStatusPtr, fbe_u8_t drive_slot);
 
 
-terminator_sas_virtual_phy_info_t * sas_virtual_phy_info_new(fbe_sas_enclosure_type_t encl_type, fbe_sas_address_t sas_address);
+terminator_sas_virtual_phy_info_t * sas_virtual_phy_info_new(fbe_sas_enclosure_type_t encl_type, fbe_sas_address_t sas_address, fbe_u8_t side);
 
 fbe_status_t terminator_initialize_eses_page_info(fbe_sas_enclosure_type_t encl_type, terminator_vp_eses_page_info_t *eses_page_info);
 

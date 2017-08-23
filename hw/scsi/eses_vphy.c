@@ -796,13 +796,10 @@ terminator_sas_encl_eses_info_t b_encl_eses_info_table[] = {
 
 //static terminator_sas_unsupported_eses_page_info_t unsupported_eses_page_info;
 
-fbe_status_t sas_virtual_phy_check_enclosure_type(fbe_sas_enclosure_type_t encl_type)
+fbe_status_t sas_virtual_phy_check_enclosure_type(fbe_sas_enclosure_type_t encl_type, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-    terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1017,13 +1014,10 @@ static void sas_virtual_phy_free_allocated_memory(terminator_sas_virtual_phy_inf
     return;
 }
 
-fbe_status_t sas_virtual_phy_max_drive_slots(fbe_sas_enclosure_type_t encl_type, uint8_t *max_drive_slots)
+fbe_status_t sas_virtual_phy_max_drive_slots(fbe_sas_enclosure_type_t encl_type, uint8_t *max_drive_slots, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-    terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1042,13 +1036,10 @@ fbe_status_t sas_virtual_phy_max_drive_slots(fbe_sas_enclosure_type_t encl_type,
 }
 
 
-fbe_status_t sas_virtual_phy_max_phys(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_phys)
+fbe_status_t sas_virtual_phy_max_phys(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_phys, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-    terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1066,13 +1057,10 @@ fbe_status_t sas_virtual_phy_max_phys(fbe_sas_enclosure_type_t encl_type, fbe_u8
     return(status);
 }
 
-fbe_status_t sas_virtual_phy_max_ps_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_ps_elems)
+fbe_status_t sas_virtual_phy_max_ps_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_ps_elems, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-     terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1090,13 +1078,10 @@ fbe_status_t sas_virtual_phy_max_ps_elems(fbe_sas_enclosure_type_t encl_type, fb
     return(status);
 }
 
-fbe_status_t sas_virtual_phy_max_conns_per_lcc(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_conns)
+fbe_status_t sas_virtual_phy_max_conns_per_lcc(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_conns, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-     terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1115,13 +1100,10 @@ fbe_status_t sas_virtual_phy_max_conns_per_lcc(fbe_sas_enclosure_type_t encl_typ
 }
 
 
-fbe_status_t sas_virtual_phy_max_cooling_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_cooling_elems)
+fbe_status_t sas_virtual_phy_max_cooling_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_cooling_elems, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-    terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1140,13 +1122,10 @@ fbe_status_t sas_virtual_phy_max_cooling_elems(fbe_sas_enclosure_type_t encl_typ
 }
 
 
-fbe_status_t sas_virtual_phy_max_display_characters(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_diplay_characters)
+fbe_status_t sas_virtual_phy_max_display_characters(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_diplay_characters, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
- terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1163,13 +1142,10 @@ fbe_status_t sas_virtual_phy_max_display_characters(fbe_sas_enclosure_type_t enc
     return(status);
 }
 
-fbe_status_t sas_virtual_phy_max_temp_sensor_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_temp_sensor_elems)
+fbe_status_t sas_virtual_phy_max_temp_sensor_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_temp_sensor_elems, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-    terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1186,13 +1162,10 @@ fbe_status_t sas_virtual_phy_max_temp_sensor_elems(fbe_sas_enclosure_type_t encl
     return(status);
 }
 
-fbe_status_t sas_virtual_phy_max_conns_per_port(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_conns)
+fbe_status_t sas_virtual_phy_max_conns_per_port(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_conns, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-     terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1228,13 +1201,10 @@ fbe_status_t sas_virtual_phy_max_conns_per_port(fbe_sas_enclosure_type_t encl_ty
 *    06-06-2011  created
 *
 *********************************************************************/
-fbe_status_t sas_virtual_phy_max_ext_cooling_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_ext_cooling_elems)
+fbe_status_t sas_virtual_phy_max_ext_cooling_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_ext_cooling_elems, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-    terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1271,13 +1241,10 @@ fbe_status_t sas_virtual_phy_max_ext_cooling_elems(fbe_sas_enclosure_type_t encl
 *    18-07-2012  created. Rui Chang
 *
 *********************************************************************/
-fbe_status_t sas_virtual_phy_max_bem_cooling_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_bem_cooling_elems)
+fbe_status_t sas_virtual_phy_max_bem_cooling_elems(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_bem_cooling_elems, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-    terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1313,13 +1280,10 @@ fbe_status_t sas_virtual_phy_max_bem_cooling_elems(fbe_sas_enclosure_type_t encl
 *    06-06-2011  created
 *
 *********************************************************************/
-fbe_status_t sas_virtual_phy_max_lccs(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_lccs)
+fbe_status_t sas_virtual_phy_max_lccs(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_lccs, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-    terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1355,13 +1319,10 @@ fbe_status_t sas_virtual_phy_max_lccs(fbe_sas_enclosure_type_t encl_type, fbe_u8
 *    06-06-2011  created
 *
 *********************************************************************/
-fbe_status_t sas_virtual_phy_max_ee_lccs(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_ee_lccs)
+fbe_status_t sas_virtual_phy_max_ee_lccs(fbe_sas_enclosure_type_t encl_type, fbe_u8_t *max_ee_lccs, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-    terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1405,16 +1366,14 @@ fbe_status_t sas_virtual_phy_max_ee_lccs(fbe_sas_enclosure_type_t encl_type, fbe
 fbe_status_t sas_virtual_phy_get_drive_slot_to_phy_mapping(
     fbe_u8_t drive_slot,
     fbe_u8_t *phy_id,
-    fbe_sas_enclosure_type_t encl_type)
+    fbe_sas_enclosure_type_t encl_type,
+    terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
     fbe_u8_t max_drive_slots;
-    terminator_sp_id_t spid;
 
-    status = fbe_terminator_api_get_sp_id(&spid);
-
-    status = sas_virtual_phy_max_drive_slots(encl_type, &max_drive_slots);
+    status = sas_virtual_phy_max_drive_slots(encl_type, &max_drive_slots, spid);
     RETURN_ON_ERROR_STATUS;
 
     // to be completed based on the encl type.
@@ -1596,13 +1555,10 @@ fbe_status_t sas_virtual_phy_get_drive_power_down_count(terminator_sas_virtual_p
     return status;
 }
 
-fbe_status_t sas_virtual_phy_max_single_lane_conns_per_port(fbe_sas_enclosure_type_t encl_type, uint8_t *max_conns)
+fbe_status_t sas_virtual_phy_max_single_lane_conns_per_port(fbe_sas_enclosure_type_t encl_type, uint8_t *max_conns, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-     terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1620,13 +1576,10 @@ fbe_status_t sas_virtual_phy_max_single_lane_conns_per_port(fbe_sas_enclosure_ty
     return(status);
 }
 
-fbe_status_t sas_virtual_phy_max_conn_id_count(fbe_sas_enclosure_type_t encl_type, uint8_t *max_conn_id_count)
+fbe_status_t sas_virtual_phy_max_conn_id_count(fbe_sas_enclosure_type_t encl_type, uint8_t *max_conn_id_count, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
-    terminator_sp_id_t spid;
-
-    status =  fbe_terminator_api_get_sp_id(&spid);
 
     // to be completed based on the encl type.
     encl_eses_info = SELECT_ENCL_ESES_INFO_TABLE(spid);
@@ -1644,16 +1597,13 @@ fbe_status_t sas_virtual_phy_max_conn_id_count(fbe_sas_enclosure_type_t encl_typ
     return(FBE_STATUS_GENERIC_FAILURE);
 }
 
-fbe_status_t sas_virtual_phy_get_individual_conn_to_phy_mapping(uint8_t individual_lane, uint8_t connector_id, uint8_t *phy_id, fbe_sas_enclosure_type_t encl_type)
+fbe_status_t sas_virtual_phy_get_individual_conn_to_phy_mapping(uint8_t individual_lane, uint8_t connector_id, uint8_t *phy_id, fbe_sas_enclosure_type_t encl_type, terminator_sp_id_t spid)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_encl_eses_info_t *encl_eses_info;
     uint8_t max_single_lane_port_conns;
-    terminator_sp_id_t spid;
 
-    status =  fbe_terminator_api_get_sp_id(&spid);
-
-    status = sas_virtual_phy_max_single_lane_conns_per_port(encl_type, &max_single_lane_port_conns);
+    status = sas_virtual_phy_max_single_lane_conns_per_port(encl_type, &max_single_lane_port_conns, spid);
     if (status != FBE_STATUS_OK)
         return status;
 
@@ -1738,7 +1688,7 @@ fbe_status_t sas_virtual_phy_get_emcGeneralInfoDirveSlotStatus(terminator_sas_vi
  **************************************************************************/
 terminator_sas_virtual_phy_info_t * sas_virtual_phy_info_new(
     fbe_sas_enclosure_type_t encl_type,
-    fbe_sas_address_t sas_address)
+    fbe_sas_address_t sas_address, fbe_u8_t side)
 {
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     terminator_sas_virtual_phy_info_t *new_info = NULL;
@@ -1757,6 +1707,7 @@ terminator_sas_virtual_phy_info_t * sas_virtual_phy_info_new(
 
     // Give virtual phy the enclosure type
     new_info->enclosure_type = encl_type;
+    new_info->side = side;
 
     //First initialize the member pointers to NULL
     new_info->cooling_status = NULL;
@@ -1769,7 +1720,7 @@ terminator_sas_virtual_phy_info_t * sas_virtual_phy_info_new(
     // statuses as we now have the virtual phy specialized to the encl
     // type.
     // DRIVE SLOTS
-    status = sas_virtual_phy_max_drive_slots(encl_type, &max_drive_slots);
+    status = sas_virtual_phy_max_drive_slots(encl_type, &max_drive_slots, side);
     if(status != FBE_STATUS_OK)
     {
        printf("%s:sas_virtual_phy_max_drive_slots failed, encl_type=%d\n", __FUNCTION__, encl_type);
@@ -1846,7 +1797,7 @@ terminator_sas_virtual_phy_info_t * sas_virtual_phy_info_new(
 
 
     // PHY'S
-    status = sas_virtual_phy_max_phys(encl_type, &max_phys);
+    status = sas_virtual_phy_max_phys(encl_type, &max_phys, side);
     if(status != FBE_STATUS_OK)
     {
         sas_virtual_phy_free_allocated_memory(new_info);
@@ -1872,7 +1823,7 @@ terminator_sas_virtual_phy_info_t * sas_virtual_phy_info_new(
     }
 
     // POWER SUPPLIES
-    status = sas_virtual_phy_max_ps_elems(encl_type, &max_ps_elems);
+    status = sas_virtual_phy_max_ps_elems(encl_type, &max_ps_elems, side);
     if(status != FBE_STATUS_OK)
     {
         sas_virtual_phy_free_allocated_memory(new_info);
@@ -1906,7 +1857,7 @@ terminator_sas_virtual_phy_info_t * sas_virtual_phy_info_new(
     }
 
     // SAS CONNECTOR
-    status = sas_virtual_phy_max_conns_per_lcc(encl_type, &max_sas_conn_elems_per_side);
+    status = sas_virtual_phy_max_conns_per_lcc(encl_type, &max_sas_conn_elems_per_side, side);
     if(status != FBE_STATUS_OK)
     {
         sas_virtual_phy_free_allocated_memory(new_info);
@@ -1936,7 +1887,7 @@ terminator_sas_virtual_phy_info_t * sas_virtual_phy_info_new(
     }
 
     // COOLING
-    status = sas_virtual_phy_max_cooling_elems(encl_type, &max_cooling_elems);
+    status = sas_virtual_phy_max_cooling_elems(encl_type, &max_cooling_elems, side);
     if(status != FBE_STATUS_OK)
     {
         sas_virtual_phy_free_allocated_memory(new_info);
@@ -1977,7 +1928,7 @@ terminator_sas_virtual_phy_info_t * sas_virtual_phy_info_new(
 
 
     // TEMPERATURE SENSOR
-    status = sas_virtual_phy_max_temp_sensor_elems(encl_type, &max_temp_sensor_elems);
+    status = sas_virtual_phy_max_temp_sensor_elems(encl_type, &max_temp_sensor_elems, side);
     if(status != FBE_STATUS_OK)
     {
         sas_virtual_phy_free_allocated_memory(new_info);
@@ -2044,6 +1995,19 @@ terminator_sas_virtual_phy_info_t * sas_virtual_phy_info_new(
     // Initially unit attention is not set on the Unit.
     new_info->unit_attention = FBE_FALSE;
 
+    {
+        switch(encl_type)
+        {
+            case FBE_SAS_ENCLOSURE_TYPE_TABASCO:
+                new_info->eses_page_info.vp_config_diag_page_info.config_page = tabasco_config_page_with_ps[side];
+                new_info->eses_page_info.vp_config_diag_page_info.config_page_info = &tabasco_config_page_info_with_ps[side];
+                new_info->eses_page_info.vp_config_diag_page_info.config_page_size = sizeof(tabasco_config_page_with_ps[side]);
+                break;
+            default:
+                return (NULL);
+        }
+    }
+
     // Initialize the eses related page information stored per VPhy.
     status = terminator_initialize_eses_page_info(encl_type, &new_info->eses_page_info);
     if(status != FBE_STATUS_OK)
@@ -2053,7 +2017,7 @@ terminator_sas_virtual_phy_info_t * sas_virtual_phy_info_new(
     }
 
     //DISPLAY CHARACTERS
-    status = sas_virtual_phy_max_display_characters(encl_type, &max_diplay_characters);
+    status = sas_virtual_phy_max_display_characters(encl_type, &max_diplay_characters, side);
     if(status != FBE_STATUS_OK)
     {
         sas_virtual_phy_free_allocated_memory(new_info);

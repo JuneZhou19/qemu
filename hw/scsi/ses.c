@@ -53,7 +53,7 @@ static void eses_sas_info_array_device_slot_status(SCSISESState *s)
 
     // Init all device status to "NOT_INSTALLED"
     fbe_u32_t i;
-    sas_virtual_phy_max_drive_slots(encl_type, &drive_slots);
+    sas_virtual_phy_max_drive_slots(encl_type, &drive_slots, s->side);
     for (i = 0; i < drive_slots; i++) {
         (info->drive_slot_status + i)->cmn_stat.elem_stat_code = SES_STAT_CODE_NOT_INSTALLED;
     }
@@ -61,7 +61,7 @@ static void eses_sas_info_array_device_slot_status(SCSISESState *s)
     // Referring to phy status, set array device slot element
     for (i = 0; i < drive_slots; i++) {
         // Get phy from mapping
-        status = sas_virtual_phy_get_drive_slot_to_phy_mapping(i, &phy_id, encl_type);
+        status = sas_virtual_phy_get_drive_slot_to_phy_mapping(i, &phy_id, encl_type, s->side);
         if (status != FBE_STATUS_OK) {
             trace_eses_sas_info_array_device_slot_status("Get phy_ip from slot mapping", status);
             return;
@@ -86,25 +86,25 @@ static void eses_sas_info_exp_phy_status(SCSISESState *s)
     fbe_status_t status = FBE_STATUS_OK;
 
     // Get mapping based on encl_type
-    status = sas_virtual_phy_max_conn_id_count(encl_type, &max_conn_id_count);
+    status = sas_virtual_phy_max_conn_id_count(encl_type, &max_conn_id_count, s->side);
     if (status != FBE_STATUS_OK) {
         trace_eses_sas_info_exp_phy_status("Get max_conn_id_count", status);
         return;
     }
 
-    status = sas_virtual_phy_max_single_lane_conns_per_port(encl_type, &max_single_lane_port_conn_count);
+    status = sas_virtual_phy_max_single_lane_conns_per_port(encl_type, &max_single_lane_port_conn_count, s->side);
     if (status != FBE_STATUS_OK) {
         trace_eses_sas_info_exp_phy_status("Get max_single_lane_conns_per_port", status);
         return;
     }
 
-    status = sas_virtual_phy_max_phys(encl_type, &max_phy_count);
+    status = sas_virtual_phy_max_phys(encl_type, &max_phy_count, s->side);
     if (status != FBE_STATUS_OK) {
         trace_eses_sas_info_exp_phy_status("Get max_phys", status);
         return;
     }
 
-    status = sas_virtual_phy_max_drive_slots(encl_type, &max_drive_count);
+    status = sas_virtual_phy_max_drive_slots(encl_type, &max_drive_count, s->side);
     if (status != FBE_STATUS_OK) {
         trace_eses_sas_info_exp_phy_status("Get max_drive_slots", status);
         return;
@@ -121,21 +121,21 @@ static void eses_sas_info_exp_phy_status(SCSISESState *s)
     // Set upstream port phys to connected, set LINK_RDY and PHY_RDY to ready
     fbe_u8_t phy_id;
     for (i = 0; i < max_single_lane_port_conn_count; i++) {
-        status = sas_virtual_phy_get_individual_conn_to_phy_mapping(i, 0, &phy_id, encl_type);
+        status = sas_virtual_phy_get_individual_conn_to_phy_mapping(i, 0, &phy_id, encl_type, s->side);
         info->phy_status[phy_id].phy_rdy = 0x1;
         info->phy_status[phy_id].link_rdy = 0x1;
     }
     // Set phys in individual_conn_phy_mapping to OK
     for (j = 0; j < max_conn_id_count; j++) {
         for (i = 0; i < max_single_lane_port_conn_count; i++) {
-            status = sas_virtual_phy_get_individual_conn_to_phy_mapping(i, j, &phy_id, encl_type);
+            status = sas_virtual_phy_get_individual_conn_to_phy_mapping(i, j, &phy_id, encl_type, s->side);
             info->phy_status[phy_id].cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
         }
     }
 
     // For phy in drive_slot_to_phy_map, set status to OK
     for (i = 0; i < max_drive_count; i++) {
-        status = sas_virtual_phy_get_drive_slot_to_phy_mapping(i, &phy_id, encl_type);
+        status = sas_virtual_phy_get_drive_slot_to_phy_mapping(i, &phy_id, encl_type, s->side);
         info->phy_status[phy_id].cmn_stat.elem_stat_code = SES_STAT_CODE_OK;
     }
 
@@ -143,7 +143,7 @@ static void eses_sas_info_exp_phy_status(SCSISESState *s)
     SCSIDevice *d = (SCSIDevice *)s;
     fbe_u32_t exp_scsi_id = d->id;
     fbe_u8_t downstream_phys;
-    sas_virtual_phy_max_drive_slots(encl_type, &downstream_phys);
+    sas_virtual_phy_max_drive_slots(encl_type, &downstream_phys, s->side);
     fbe_u32_t valid_scsi_id_start = exp_scsi_id - downstream_phys;
     SCSIBus *bus = scsi_bus_from_device((SCSIDevice *)s);
     BusChild *kid;
@@ -159,7 +159,7 @@ static void eses_sas_info_exp_phy_status(SCSISESState *s)
                 // get slot from scsi-id
                 slot = dev->id - valid_scsi_id_start;
                 // set PHY_RDY to ready
-                status = sas_virtual_phy_get_drive_slot_to_phy_mapping(slot, &phy_id, encl_type);
+                status = sas_virtual_phy_get_drive_slot_to_phy_mapping(slot, &phy_id, encl_type, s->side);
                 info->phy_status[phy_id].phy_rdy = 0x1;
                 // FIXME
                 // set LINK_RDY to ready
@@ -447,7 +447,7 @@ static int scsi_ses_emulate_recv_diag(SCSIRequest *req,  uint8_t *outbuf, struct
     fbe_bool_t not_ready = FBE_TRUE;
     
     encl_type = (fbe_sas_enclosure_type_t)s->dae_type;
-    status = sas_virtual_phy_check_enclosure_type(encl_type);
+    status = sas_virtual_phy_check_enclosure_type(encl_type, s->side);
     if (status != FBE_STATUS_OK) {
        DPRINTF("Unknown DAE type: %x\n", encl_type);
        return -1;
@@ -524,7 +524,7 @@ static int scsi_ses_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
     fbe_sas_enclosure_type_t            encl_type = FBE_SAS_ENCLOSURE_TYPE_INVALID;
     
     encl_type = (fbe_sas_enclosure_type_t)s->dae_type;
-    status = sas_virtual_phy_check_enclosure_type(encl_type);
+    status = sas_virtual_phy_check_enclosure_type(encl_type, s->side);
     if (status != FBE_STATUS_OK) {
         DPRINTF("Unknown DAE type: 0x%x.\n", encl_type);
         return -1;
@@ -864,11 +864,12 @@ static void scsi_ses_realize(SCSIDevice *dev, Error **errp)
     }
 
     /* initialize ESES, put here for current_machine is ready */
-    config_page_init();
+    config_page_init(s->side);
 
     /* initialize VPHY SAS Info */
-    s->eses_sas_info = sas_virtual_phy_info_new(s->dae_type, s->qdev.wwn);
+    s->eses_sas_info = sas_virtual_phy_info_new(s->dae_type, s->qdev.wwn, s->side);
 
+    DPRINTF("%s:%d side %d\n", __func__, __LINE__, s->side);
     // Create a thread to maintain eses sas info
     qemu_thread_create(&s->eses_sas_info_thread, "ESES thread", eses_sas_info_handler, s, QEMU_THREAD_DETACHED);
 
@@ -943,6 +944,7 @@ static SCSIRequest *scsi_new_request(SCSIDevice *d, uint32_t tag, uint32_t lun,
 static Property scsi_ses_properties[] = {
     DEFINE_SCSI_SES_PROPERTIES(),
     DEFINE_PROP_UINT8("dae_type", SCSISESState, dae_type, 0),
+    DEFINE_PROP_UINT8("side", SCSISESState, side, 0),
     DEFINE_PROP_UINT64("wwn", SCSISESState, qdev.wwn, 0),
     DEFINE_PROP_UINT64("port_wwn", SCSISESState, qdev.port_wwn, 0),
     DEFINE_PROP_UINT16("port_index", SCSISESState, port_index, 0),

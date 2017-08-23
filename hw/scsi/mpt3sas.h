@@ -220,11 +220,15 @@ struct MPT3SASState {
         uint32_t all_phys;
         uint32_t upstream_phys;
         uint32_t downstream_phys;
+        uint32_t downstream_end_phy;
         uint32_t downstream_start_phy;
         uint32_t upstream_start_phy;
         uint32_t expansion_phys;
         uint32_t expansion_start_phy;
 
+        uint64_t upstream_phys_bitmap;
+        uint64_t downstream_phys_bitmap;
+        uint64_t expansion_phys_bitmap;
     } expander;
 
     SCSIBus bus;

@@ -111,6 +111,7 @@ struct SCSIDevice
     uint64_t max_lba;
     uint64_t wwn;
     uint64_t port_wwn;
+    uint64_t target_wwn;
 };
 
 extern const VMStateDescription vmstate_scsi_device;

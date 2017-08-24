@@ -727,6 +727,9 @@ static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
             outbuf[buflen++] = 0x83;        // device identification
 
             if (s->qdev.type == TYPE_DISK) {
+                insert_inq_page_number_list(s->page_buffer, 0x88, outbuf, &buflen);
+                outbuf[buflen++] = 0x88;
+
                 insert_inq_page_number_list(s->page_buffer, 0xb0, outbuf, &buflen);
                 outbuf[buflen++] = 0xb0;    // block limits
                 outbuf[buflen++] = 0xb1;    // block device characteristics
@@ -801,6 +804,69 @@ static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
                 stw_be_p(&outbuf[buflen + 2], s->port_index);
                 buflen += 4;
             }
+
+            if (s->qdev.target_wwn) {
+                uint8_t len = 0;
+                char buf[128] = {0};
+
+                outbuf[buflen++] = 0x61; // SAS / Binary
+                outbuf[buflen++] = 0xa3; // PIV / Target Device contains LU / NAA
+                outbuf[buflen++] = 0;    // reserved
+                outbuf[buflen++] = 8;
+                stq_be_p(&outbuf[buflen], s->qdev.target_wwn);
+                buflen += 8; 
+
+                outbuf[buflen++] = 0x63; // SAS / UTF8
+                outbuf[buflen++] = 0xa8; // PIV / Target Device contains LU / SCSI name string
+                outbuf[buflen++] = 0;    // reserved
+
+                len = sprintf(buf, "naa.%lX", s->qdev.target_wwn);
+                len += 4;
+                outbuf[buflen++] = len;
+                memcpy(&outbuf[buflen], buf, len);
+                buflen += len; 
+            }
+
+            break;
+
+        }
+        case 0x88:
+        {
+            // port 1
+            buflen += 2;              // reserved
+            outbuf[buflen++] = 0x00;
+            outbuf[buflen++] = 0x01; // PORT INDEX
+            buflen += 2;             // reserved
+            outbuf[buflen++] = 0x00;
+            outbuf[buflen++] = 0x00; // TRANSPORTID LENGTH
+            buflen +=2;              // reserved
+            outbuf[buflen++] = 0x00;
+            outbuf[buflen++] = 0x0c; // Target port descriptor length
+
+            outbuf[buflen++] = 0x61; // SAS / Binary            
+            outbuf[buflen++] = 0x93; // PIV / Target port / NAA
+            outbuf[buflen++] = 0;    // reserved
+            outbuf[buflen++] = 8;
+            stq_be_p(&outbuf[buflen], s->qdev.wwn + 1);
+            buflen += 8;
+            // port 2
+            buflen += 2;              // reserved
+            outbuf[buflen++] = 0x00;
+            outbuf[buflen++] = 0x02; // PORT INDEX
+            buflen += 2;             // reserved
+            outbuf[buflen++] = 0x00;
+            outbuf[buflen++] = 0x00; // TRANSPORTID LENGTH
+            buflen +=2;              // reserved
+            outbuf[buflen++] = 0x00;
+            outbuf[buflen++] = 0x0c; // Target port descriptor length
+
+            outbuf[buflen++] = 0x61; // SAS / Binary            
+            outbuf[buflen++] = 0x93; // PIV / Target port / NAA
+            outbuf[buflen++] = 0;    // reserved
+            outbuf[buflen++] = 8;
+            stq_be_p(&outbuf[buflen], s->qdev.wwn + 2);
+            buflen += 8;
+            
             break;
         }
         case 0xb0: /* block limits */
@@ -3289,6 +3355,7 @@ static Property scsi_hd_properties[] = {
     DEFINE_PROP_UINT64("wwn", SCSIDiskState, qdev.wwn, 0),
     DEFINE_PROP_UINT64("port_wwn", SCSIDiskState, qdev.port_wwn, 0),
     DEFINE_PROP_UINT16("port_index", SCSIDiskState, port_index, 0),
+    DEFINE_PROP_UINT64("target_wwn", SCSIDiskState, qdev.target_wwn, 0),
     DEFINE_PROP_UINT64("max_unmap_size", SCSIDiskState, max_unmap_size,
                        DEFAULT_MAX_UNMAP_SIZE),
     DEFINE_PROP_UINT64("max_io_size", SCSIDiskState, max_io_size,

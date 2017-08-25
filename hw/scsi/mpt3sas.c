@@ -382,7 +382,7 @@ static size_t mpt3sas_config_manufacturing_5(MPT3SASState *s, uint8_t **data, in
 
     for (i = 0; i < MPT3SAS_NUM_PHYS; i++) {
         man_pg5->Phy[i].WWID = cpu_to_le64(s->sas_address); //FIXME
-        man_pg5->Phy[i].DeviceName = cpu_to_le64(s->sas_address); //FIXME
+        man_pg5->Phy[i].DeviceName = cpu_to_le64(s->sas_address + 1); //FIXME
     }
     if (data) {
         *data = (uint8_t *)man_pg5;
@@ -915,12 +915,12 @@ static size_t mpt3sas_config_sas_device_0(MPT3SASState *s, uint8_t **data, int a
         scsi_id = HANDLE_TO_SCSI_ID(handle);
 
         d = scsi_device_find(&s->bus, 0, scsi_id, 0);
-        if (d && d->wwn) {
-            sas_address = d->wwn;
+        if (d && d->port_wwn) {
+            sas_address = d->port_wwn;
         } else if (d) {
-            sas_address = MPT3SAS_DRIVE_DEFAULT_SAS_ADDR + scsi_id;
+            sas_address = d->wwn;
         } else {
-            sas_address = 0;
+            sas_address = MPT3SAS_DRIVE_DEFAULT_SAS_ADDR + scsi_id;
         }
 
         trace_mpt3sas_query_scsi_target_info(handle, scsi_id, sas_address);
@@ -942,7 +942,11 @@ static size_t mpt3sas_config_sas_device_0(MPT3SASState *s, uint8_t **data, int a
                                                 MPI2_SAS_DEVICE_INFO_DIRECT_ATTACH);
         sas_device_pg0.Flags = cpu_to_le16(MPI2_SAS_DEVICE0_FLAGS_DEVICE_PRESENT |
                                            MPI2_SAS_DEVICE0_FLAGS_ENCL_LEVEL_VALID);
-        sas_device_pg0.DeviceName = cpu_to_le64(sas_address - 1);
+        if (d && d->target_wwn)
+            sas_device_pg0.DeviceName = cpu_to_le64(d->target_wwn);
+        else 
+            sas_device_pg0.DeviceName = cpu_to_le64(d->wwn);
+
         sas_device_pg0.DmaGroup = sas_device_pg0.ParentDevHandle;
         sas_device_pg0.MaxPortConnections = 0x1;
     } else if (handle >= MPT3SAS_EXPANDER_HANDLE_START &&
@@ -961,7 +965,7 @@ static size_t mpt3sas_config_sas_device_0(MPT3SASState *s, uint8_t **data, int a
         sas_device_pg0.Flags = cpu_to_le16(MPI2_SAS_DEVICE0_FLAGS_DEVICE_PRESENT | MPI2_SAS_DEVICE0_FLAGS_ENCL_LEVEL_VALID);
         sas_device_pg0.DmaGroup = MPT3SAS_EXPANDER_HANDLE_START;
         sas_device_pg0.MaxPortConnections = s->expander.upstream_phys;
-        sas_device_pg0.DeviceName = cpu_to_le64(MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR - 1);
+        sas_device_pg0.DeviceName = cpu_to_le64(MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR + 1);
     } else {
         sas_device_pg0.DevHandle = 0xFFFF;
         sas_device_pg0.ParentDevHandle = 0xFFFF;
@@ -2238,7 +2242,7 @@ static int mpt3sas_handle_scsi_io_request(MPT3SASState *s, uint16_t smid, uint8_
     return 0;
 
 //overrun:
-    trace_mpt3sas_scsi_io_overrun(sdev->wwn, req->Control, req->DataLength, mpt3sas_req->sreq->cmd.xfer, mpt3sas_req->sreq->cmd.mode);
+    trace_mpt3sas_scsi_io_overrun(sdev->port_wwn, req->Control, req->DataLength, mpt3sas_req->sreq->cmd.xfer, mpt3sas_req->sreq->cmd.mode);
     status = MPI2_IOCSTATUS_SCSI_DATA_OVERRUN;
 free_bad:
     mpt3sas_free_request(mpt3sas_req);
@@ -2726,7 +2730,7 @@ static void mpt3sas_handle_smp_passthrough(MPT3SASState *s, uint16_t smid, uint8
                         disrep.hmax_linkrate = MPI25_SAS_HWRATE_MAX_RATE_12_0 >> 4;
                         disrep.pmax_linkrate = MPI25_SAS_PRATE_MIN_RATE_12_0 >> 4;
                         disrep.tproto = MPI2_SAS_DEVICE_INFO_SSP_TARGET >> 8;
-                        *(uint64_t *)disrep.attached_sas_addr = cpu_to_be64(sdev->wwn);
+                        *(uint64_t *)disrep.attached_sas_addr = cpu_to_be64(sdev->port_wwn);
                         disrep.change_count = 0x1;
                         disrep.routing_attr = MPI2_SAS_PHYINFO_TABLE_ROUTING >> 4;
                         if (sdev->type == TYPE_ENCLOSURE) {
@@ -3562,7 +3566,7 @@ static void mpt3sas_command_complete(SCSIRequest *sreq,
             reply.SenseCount = sense_len;
             reply.IOCStatus = MPI2_IOCSTATUS_SCSI_DATA_UNDERRUN;
             dump_cdb(req->scsi_io.CDB.CDB32, req->scsi_io.IoFlags & 0xff);
-            trace_mpt3sas_scsi_io_command_error(sreq->dev->wwn, req, req->scsi_io.CDB.CDB32[0], req->smid, sreq->status);
+            trace_mpt3sas_scsi_io_command_error(sreq->dev->port_wwn, req, req->scsi_io.CDB.CDB32[0], req->smid, sreq->status);
         }
 
         mpt3sas_post_reply(s, req->smid, req->msix_index, (MPI2DefaultReply_t *)&reply);
@@ -3765,7 +3769,7 @@ static void mpt3sas_hotplug(HotplugHandler *sptr, DeviceState *dptr, Error **err
 
     uint32_t event_data_length = 0;
     uint32_t scsi_id = d->id;
-    trace_mpt3sas_hotplug(d->wwn, scsi_id);
+    trace_mpt3sas_hotplug(d->port_wwn, scsi_id);
 
     // 1. notify driver sas discovery start
     mpt3sas_send_discovery_event(s, MPI2_EVENT_SAS_DISC_RC_STARTED);
@@ -3805,7 +3809,7 @@ static void mpt3sas_hotunplug(HotplugHandler *sptr, DeviceState *dptr, Error **e
 
     uint32_t event_data_length = 0;
     uint32_t scsi_id = d->id;
-    trace_mpt3sas_hotunplug(d->wwn, scsi_id);
+    trace_mpt3sas_hotunplug(d->port_wwn, scsi_id);
 
     qdev_simple_device_unplug_cb(sptr, dptr, errp);
 

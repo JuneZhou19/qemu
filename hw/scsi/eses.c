@@ -6022,7 +6022,7 @@ static fbe_status_t addl_elem_stat_page_build_sas_peer_exp_elements(terminator_s
     return(status);        
 }
 
-static fbe_status_t addl_elem_stat_page_esc_elec_phy_desc_get_other_elem_index(
+static __attribute__((unused)) fbe_status_t addl_elem_stat_page_esc_elec_phy_desc_get_other_elem_index(
     terminator_sas_virtual_phy_info_t *info,
     fbe_u8_t phy_id, fbe_u8_t *elem_index)
 {

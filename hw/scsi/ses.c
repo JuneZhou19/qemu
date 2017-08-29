@@ -585,7 +585,7 @@ static int scsi_ses_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
         case 0x83: /* Device identification page, mandatory */
         {
             const uint64_t sas_addr_0 = 0x50060480E3FAAA09;
-            const uint64_t sas_addr_1 = 0x500604810B18F57E;
+            //const uint64_t sas_addr_1 = 0x500604810B18F57E;
 
             DPRINTF("Inquiry EVPD[Device identification] buffer size %zd\n", req->cmd.xfer);
 
@@ -602,7 +602,7 @@ static int scsi_ses_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
             outbuf[buflen++] = 0x93; // PIV: 1b, ASSOC: 01b, desigtype: 03h
             outbuf[buflen++] = 0x00; // reserved
             outbuf[buflen++] = 8;
-            *(uint64_t*)&outbuf[buflen] = cpu_to_be64(sas_addr_1);
+            *(uint64_t*)&outbuf[buflen] = cpu_to_be64(s->qdev.wwn);
             buflen += 8;
 
             // third designation descriptor: relative target port id

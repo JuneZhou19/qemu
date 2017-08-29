@@ -31,6 +31,7 @@
 #include "hw/scsi/scsi.h"
 #include "block/scsi.h"
 #include "mpt3sas.h"
+#include "ses.h"
 #include "trace/control.h"
 #include "qemu/log.h"
 #include "trace.h"
@@ -854,6 +855,18 @@ static uint16_t mpt3sas_get_sas_expander_handle_phy(MPT3SASState *s, int page_ad
     return dev_handle;
 }
 
+static uint64_t get_expander_sas_address(MPT3SASState *s, uint8_t expander_idx)
+{
+    BusChild *kid;
+    QTAILQ_FOREACH_REVERSE(kid, &s->bus.qbus.children, ChildrenHead, sibling){
+        SCSIDevice *tmp_dev = SCSI_DEVICE((DeviceState *)kid->child);
+        if (tmp_dev->type == TYPE_ENCLOSURE && expander_idx == ((SCSISESState *)tmp_dev)->side) {
+            return tmp_dev->wwn + 1;
+        }
+    }
+    return 0;
+}
+
 static size_t mpt3sas_config_sas_device_0(MPT3SASState *s, uint8_t **data, int address)
 {
     Mpi2SasDevicePage0_t sas_device_pg0;
@@ -952,10 +965,11 @@ static size_t mpt3sas_config_sas_device_0(MPT3SASState *s, uint8_t **data, int a
     } else if (handle >= MPT3SAS_EXPANDER_HANDLE_START &&
             handle < MPT3SAS_EXPANDER_HANDLE_START + s->expander.count) {
         uint8_t expander_idx = handle - MPT3SAS_EXPANDER_HANDLE_START;
+        uint64_t expander_sas_addr = get_expander_sas_address(s, expander_idx);
 
         sas_device_pg0.EnclosureHandle = MPT3SAS_EXPANDER_ENCLOSURE_HANDLE + expander_idx;
         sas_device_pg0.AttachedPhyIdentifier = 0; //TODO same with physical io controller
-        sas_device_pg0.SASAddress = cpu_to_le64(MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR + expander_idx);
+        sas_device_pg0.SASAddress = cpu_to_le64(expander_sas_addr);
         sas_device_pg0.DeviceInfo = mpt3sas_get_sas_expander_device_info(s, expander_idx,
                                                                         &sas_device_pg0.PhysicalPort,
                                                                         &sas_device_pg0.ParentDevHandle,
@@ -965,7 +979,7 @@ static size_t mpt3sas_config_sas_device_0(MPT3SASState *s, uint8_t **data, int a
         sas_device_pg0.Flags = cpu_to_le16(MPI2_SAS_DEVICE0_FLAGS_DEVICE_PRESENT | MPI2_SAS_DEVICE0_FLAGS_ENCL_LEVEL_VALID);
         sas_device_pg0.DmaGroup = MPT3SAS_EXPANDER_HANDLE_START;
         sas_device_pg0.MaxPortConnections = s->expander.upstream_phys;
-        sas_device_pg0.DeviceName = cpu_to_le64(MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR + 1);
+        sas_device_pg0.DeviceName = cpu_to_le64(expander_sas_addr + 1);
     } else {
         sas_device_pg0.DevHandle = 0xFFFF;
         sas_device_pg0.ParentDevHandle = 0xFFFF;
@@ -1097,7 +1111,7 @@ static size_t mpt3sas_config_sas_expander_0(MPT3SASState *s, uint8_t **data, int
         exp_pg0.PhysicalPort = expander_idx;
         exp_pg0.EnclosureHandle = MPT3SAS_EXPANDER_ENCLOSURE_HANDLE + expander_idx;
 
-        exp_pg0.SASAddress = MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR + expander_idx;
+        exp_pg0.SASAddress = get_expander_sas_address(s, expander_idx);
         exp_pg0.DiscoveryStatus = 0x0;
         exp_pg0.DevHandle = MPT3SAS_EXPANDER_HANDLE_START + expander_idx;
         exp_pg0.ParentDevHandle = mpt3sas_get_expander_parent_handle(s, expander_idx);
@@ -1233,7 +1247,7 @@ static size_t mpt3sas_config_enclosure_0(MPT3SASState *s, uint8_t **data, int ad
         uint8_t i = 0;
         SCSIDevice *ses_device = NULL;
 
-        sas_enclosure_pg0.EnclosureLogicalID = MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR + expander_idx;
+        sas_enclosure_pg0.EnclosureLogicalID = get_expander_sas_address(s, expander_idx);
         //sas_enclosure_pg0.NumSlots = MPT3SAS_EXPANDER_NUM_SLOTS; 
         //sas_enclosure_pg0.NumSlots = s->expander.all_phys - s->expander.upstream_phys; 
         sas_enclosure_pg0.NumSlots = s->expander.downstream_phys;
@@ -2713,7 +2727,14 @@ static void mpt3sas_handle_smp_passthrough(MPT3SASState *s, uint16_t smid, uint8
                 } else if (phy_id >= s->expander.expansion_start_phy && phy_id < s->expander.expansion_start_phy + s->expander.expansion_phys) {
                     disrep.attached_dev_type = MPI2_SAS_DEVICE_INFO_NO_DEVICE;
                 } else {
-                    expander_idx = req->SASAddress - MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR;
+                    // search expander id in device list based on sas address in rquest
+                    BusChild *kid;
+                    QTAILQ_FOREACH_REVERSE(kid, &s->bus.qbus.children, ChildrenHead, sibling){
+                        SCSIDevice *tmp_dev = SCSI_DEVICE((DeviceState *)kid->child);
+                        if (tmp_dev->type == TYPE_ENCLOSURE && (tmp_dev->wwn + 1) == req->SASAddress) {
+                            expander_idx = ((SCSISESState *)tmp_dev)->side;
+                        }
+                    }
 
                     target_scsi_id = expander_phy_id_to_scsi_id(s, expander_idx, phy_id);
 
@@ -2738,6 +2759,7 @@ static void mpt3sas_handle_smp_passthrough(MPT3SASState *s, uint16_t smid, uint8
                             disrep.iproto = (MPI2_SAS_DEVICE_INFO_SSP_INITIATOR >> 4) & 0x7;
                             disrep.virtual = 0x1;
                             disrep.attached_phy_id = phy_id;
+                            *(uint64_t *)disrep.attached_sas_addr = cpu_to_be64(sdev->wwn);
                         }
                     }
                 }
@@ -3048,7 +3070,7 @@ static void mpt3sas_add_events(MPT3SASState *s)
         mpt3sas_enclosure_device_status_change_event_enqueue(s, enclosure_handle + expander,
                                                     MPI2_EVENT_SAS_ENCL_RC_ADDED,
                                                     expander, /* Physical Port */
-                                                    MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR + expander);
+                                                    get_expander_sas_address(s, expander));
 
 
         /* notify guest driver sas topology change(report expander PHY), add expander and drives */

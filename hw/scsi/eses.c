@@ -5195,7 +5195,7 @@ static fbe_status_t addl_elem_stat_page_build_device_slot_elements(terminator_sa
             return(status);
         }
 
-        dev_phy_desc_ptr->attached_sas_address = bswap64(MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR + s->side);
+        dev_phy_desc_ptr->attached_sas_address = bswap64(((SCSISESState *)s->ses_dev)->qdev.wwn + 1);
         DPRINTF("%s:%d attached sas address 0x%lx\n", __func__, __LINE__, cpu_to_be64(dev_phy_desc_ptr->attached_sas_address));
 
         // this is sas address of the drive physical slot i;
@@ -5256,14 +5256,30 @@ static bool sas_virtual_phy_phy_corresponds_to_drive_slot(terminator_sas_virtual
 
 static fbe_status_t addl_elem_stat_page_sas_exp_get_sas_address(terminator_sas_virtual_phy_info_t *s, uint64_t *sas_address)
 {
-    *sas_address = MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR + s->side;
+    *sas_address = ((SCSISESState *)s->ses_dev)->qdev.wwn + 1;
+    DPRINTF("%s:%d get local sas address 0x%lx side %d\n", __func__, __LINE__, *sas_address, ((SCSISESState *)s->ses_dev)->side);
     return FBE_STATUS_OK;
 }
 
 static fbe_status_t addl_elem_stat_page_sas_peer_exp_get_sas_address(terminator_sas_virtual_phy_info_t *s, uint64_t *sas_address)
 {
-    *sas_address = MPT3SAS_EXPANDER_DEFAULT_SAS_ADDR + !s->side;
-    return FBE_STATUS_OK;
+    SCSISESState *local_ses_dev = (SCSISESState *)s->ses_dev;
+    SCSIBus *bus = scsi_bus_from_device(&local_ses_dev->qdev);
+    BusChild *kid;
+
+    *sas_address = 0;
+
+    QTAILQ_FOREACH_REVERSE(kid, &bus->qbus.children, ChildrenHead, sibling){
+        DeviceState *qdev = kid->child;
+        SCSIDevice *dev = SCSI_DEVICE(qdev);
+        if (dev->type == TYPE_ENCLOSURE && !local_ses_dev->side == ((SCSISESState *)dev)->side) {
+            *sas_address = dev->wwn + 1;
+            DPRINTF("%s:%d get peer sas address 0x%lx side %d\n", __func__, __LINE__, *sas_address, !local_ses_dev->side);
+            return FBE_STATUS_OK;
+        }
+    }
+
+    return FBE_STATUS_FAILED;
 }
 
 static fbe_status_t addl_elem_stat_page_sas_exp_get_elem_index(terminator_sas_virtual_phy_info_t *s, uint8_t *elem_index)

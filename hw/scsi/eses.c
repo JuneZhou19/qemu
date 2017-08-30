@@ -5272,7 +5272,7 @@ static fbe_status_t addl_elem_stat_page_sas_peer_exp_get_sas_address(terminator_
     QTAILQ_FOREACH_REVERSE(kid, &bus->qbus.children, ChildrenHead, sibling){
         DeviceState *qdev = kid->child;
         SCSIDevice *dev = SCSI_DEVICE(qdev);
-        if (dev->type == TYPE_ENCLOSURE && !local_ses_dev->side == ((SCSISESState *)dev)->side) {
+        if (dev->type == TYPE_ENCLOSURE && (!local_ses_dev->side) == ((SCSISESState *)dev)->side) {
             *sas_address = dev->wwn + 1;
             DPRINTF("%s:%d get peer sas address 0x%lx side %d\n", __func__, __LINE__, *sas_address, !local_ses_dev->side);
             return FBE_STATUS_OK;

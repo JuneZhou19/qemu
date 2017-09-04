@@ -750,6 +750,8 @@ static void scsi_ses_emulate_write_data(SCSIRequest *req)
         /* This also clears the sense buffer for REQUEST SENSE.  */
         scsi_ses_emulate_mode_select(r, r->iov.iov_base);
         break;
+    case SEND_DIAGNOSTIC:
+        break;
 
     default:
         abort();
@@ -781,7 +783,7 @@ static int32_t scsi_ses_emulate_command(SCSIRequest *req, uint8_t *buf)
     case TEST_UNIT_READY:
         break;
     case INQUIRY:
-	buflen = scsi_ses_emulate_inquiry(req, outbuf);
+        buflen = scsi_ses_emulate_inquiry(req, outbuf);
         if (buflen < 0) {
             goto illegal_request;
         }
@@ -814,6 +816,8 @@ static int32_t scsi_ses_emulate_command(SCSIRequest *req, uint8_t *buf)
         }
         break;
     case SEND_DIAGNOSTIC:
+        break;
+    case READ_BUFFER:
         break;
     default:
         DPRINTF("Unknown SCSI command (%2.2x=%s)\n", buf[0],
@@ -948,8 +952,11 @@ static Property scsi_ses_properties[] = {
     DEFINE_SCSI_SES_PROPERTIES(),
     DEFINE_PROP_UINT8("dae_type", SCSISESState, dae_type, 0),
     DEFINE_PROP_UINT8("side", SCSISESState, side, 0),
+    DEFINE_PROP_UINT8("physical_port", SCSISESState, physical_port, 0),
     DEFINE_PROP_UINT64("wwn", SCSISESState, qdev.wwn, 0),
     DEFINE_PROP_UINT64("port_wwn", SCSISESState, qdev.port_wwn, 0),
+    DEFINE_PROP_UINT64("pp_atta_sas_addr", SCSISESState, primary_port_attached_sas_address, 0),
+    DEFINE_PROP_UINT64("ep_atta_sas_addr", SCSISESState, expansion_port_attached_sas_address, 0),
     DEFINE_PROP_UINT16("port_index", SCSISESState, port_index, 0),
     DEFINE_PROP_END_OF_LIST(),
 };

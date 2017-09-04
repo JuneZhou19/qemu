@@ -253,7 +253,7 @@ static uint16_t mpt3sas_get_parent_dev_handle(MPT3SASState *s, uint32_t scsi_id,
 
 static uint16_t mpt3sas_get_expander_parent_handle(MPT3SASState *s, uint8_t expander_idx)
 {
-    return MPT3SAS_IOC_HANDLE_START + expander_idx * s->expander.upstream_phys;
+    return MPT3SAS_IOC_HANDLE_START + expander_idx; //* s->expander.upstream_phys;
 }
 
 static uint32_t mpt3sas_get_sas_expander_device_info(MPT3SASState *s, uint8_t expander_idx, uint8_t *port, uint16_t *parent_handle, uint16_t *expander_handle)
@@ -860,7 +860,8 @@ static uint64_t get_expander_sas_address(MPT3SASState *s, uint8_t expander_idx)
     BusChild *kid;
     QTAILQ_FOREACH_REVERSE(kid, &s->bus.qbus.children, ChildrenHead, sibling){
         SCSIDevice *tmp_dev = SCSI_DEVICE((DeviceState *)kid->child);
-        if (tmp_dev->type == TYPE_ENCLOSURE && expander_idx == ((SCSISESState *)tmp_dev)->side) {
+        uint8_t target_expander_idx = scsi_id_to_expander_id(s, tmp_dev->id);
+        if (tmp_dev->type == TYPE_ENCLOSURE && expander_idx == target_expander_idx) {
             return tmp_dev->wwn + 1;
         }
     }
@@ -962,6 +963,7 @@ static size_t mpt3sas_config_sas_device_0(MPT3SASState *s, uint8_t **data, int a
 
         sas_device_pg0.DmaGroup = sas_device_pg0.ParentDevHandle;
         sas_device_pg0.MaxPortConnections = 0x1;
+        sas_device_pg0.AttachedPhyIdentifier = d->port_wwn - d->wwn - 1;
     } else if (handle >= MPT3SAS_EXPANDER_HANDLE_START &&
             handle < MPT3SAS_EXPANDER_HANDLE_START + s->expander.count) {
         uint8_t expander_idx = handle - MPT3SAS_EXPANDER_HANDLE_START;
@@ -976,6 +978,7 @@ static size_t mpt3sas_config_sas_device_0(MPT3SASState *s, uint8_t **data, int a
                                                                         &sas_device_pg0.DevHandle);
 
         sas_device_pg0.PhyNum = sas_device_pg0.ParentDevHandle - MPT3SAS_IOC_HANDLE_START;
+        sas_device_pg0.AttachedPhyIdentifier = sas_device_pg0.PhyNum;
         sas_device_pg0.Flags = cpu_to_le16(MPI2_SAS_DEVICE0_FLAGS_DEVICE_PRESENT | MPI2_SAS_DEVICE0_FLAGS_ENCL_LEVEL_VALID);
         sas_device_pg0.DmaGroup = MPT3SAS_EXPANDER_HANDLE_START;
         sas_device_pg0.MaxPortConnections = s->expander.upstream_phys;
@@ -1028,7 +1031,7 @@ static size_t mpt3sas_config_sas_phy_0(MPT3SASState *s, uint8_t **data, int addr
     //sas_phy_pg0.AttachedDeviceInfo = device_info;
     switch (device_info & MPI2_SAS_DEVICE_INFO_MASK_DEVICE_TYPE) {
     case MPI2_SAS_DEVICE_INFO_EDGE_EXPANDER:
-        sas_phy_pg0.AttachedPhyIdentifier = s->expander.downstream_start_phy + phy_number;
+        sas_phy_pg0.AttachedPhyIdentifier = s->expander.upstream_start_phy + phy_number;
         break;
     case MPI2_SAS_DEVICE_INFO_END_DEVICE:
         sas_phy_pg0.AttachedPhyIdentifier = 0;
@@ -1153,6 +1156,7 @@ static size_t mpt3sas_config_sas_expander_1(MPT3SASState *s, uint8_t **data, int
     if (dev_handle >= MPT3SAS_EXPANDER_HANDLE_START &&
         dev_handle < MPT3SAS_EXPANDER_HANDLE_START + s->expander.count) {
         uint8_t expander_idx = dev_handle - MPT3SAS_EXPANDER_HANDLE_START;
+        SCSIDevice *sdev = NULL;
 
         if (phy_id > s->expander.all_phys - 1)
             return -1;
@@ -1185,29 +1189,39 @@ static size_t mpt3sas_config_sas_expander_1(MPT3SASState *s, uint8_t **data, int
                 case MPI2_SAS_DEVICE_INFO_EDGE_EXPANDER:
                     abort();
                 case MPI2_SAS_DEVICE_INFO_END_DEVICE:
-                    exp_pg1.NegotiatedLinkRate = MPI25_SAS_NEG_LINK_RATE_12_0;
+                    exp_pg1.NegotiatedLinkRate = MPI25_SAS_NEG_LINK_RATE_12_0 | (MPI25_SAS_NEG_LINK_RATE_12_0 << MPI2_SAS_NEG_LINK_RATE_SHIFT_LOGICAL);
                     break;
                 default:
                     exp_pg1.NegotiatedLinkRate = MPI2_SAS_NEG_LINK_RATE_UNKNOWN_LINK_RATE;
                     break;
                 }
+
+                sdev = scsi_device_find(&s->bus, 0, scsi_id, 0);
+                if (sdev) {
+                    if (sdev->type == TYPE_DISK)
+                        exp_pg1.AttachedPhyIdentifier = sdev->port_wwn - sdev->wwn - 1;
+                    else 
+                        exp_pg1.AttachedPhyIdentifier = phy_id;
+                }
             } else {
                 //TODO: if phy is not set in bitmap
             }
-        } else if (phy_id >= s->expander.upstream_start_phy && phy_id < s->expander.upstream_start_phy + s->expander.upstream_phys) {
+        } else if (phy_id >= s->expander.upstream_start_phy && phy_id < s->expander.upstream_start_phy + s->expander.upstream_phys) { //primary port
             exp_pg1.AttachedDeviceInfo = mpt3sas_get_phy_device_info(s);
             exp_pg1.AttachedDevHandle = mpt3sas_get_expander_parent_handle(s, expander_idx);
-            exp_pg1.NegotiatedLinkRate = MPI25_SAS_NEG_LINK_RATE_12_0;
+            exp_pg1.NegotiatedLinkRate = MPI25_SAS_NEG_LINK_RATE_12_0 | (MPI25_SAS_NEG_LINK_RATE_12_0 << MPI2_SAS_NEG_LINK_RATE_SHIFT_LOGICAL);
             exp_pg1.AttachedPhyInfo = MPI2_SAS_APHYINFO_REASON_POWER_ON;
             exp_pg1.ExpanderDevHandle = MPT3SAS_EXPANDER_HANDLE_START + expander_idx;
             exp_pg1.DiscoveryInfo = MPI2_SAS_EXPANDER1_DISCINFO_LINK_STATUS_CHANGE;
-        } else if (phy_id >= s->expander.expansion_start_phy && phy_id < s->expander.expansion_start_phy + s->expander.expansion_phys) {
+            exp_pg1.AttachedPhyIdentifier = phy_id;
+        } else if (phy_id >= s->expander.expansion_start_phy && phy_id < s->expander.expansion_start_phy + s->expander.expansion_phys) { //expansion port
             exp_pg1.AttachedDeviceInfo = 0;
             exp_pg1.AttachedDevHandle = 0;
-            exp_pg1.NegotiatedLinkRate = 0;
+            exp_pg1.NegotiatedLinkRate = MPI25_SAS_NEG_LINK_RATE_12_0 | (MPI25_SAS_NEG_LINK_RATE_12_0 << MPI2_SAS_NEG_LINK_RATE_SHIFT_LOGICAL);
             exp_pg1.AttachedPhyInfo = 0;
-            exp_pg1.ExpanderDevHandle = 0;
+            exp_pg1.ExpanderDevHandle = MPT3SAS_EXPANDER_HANDLE_START + expander_idx;
             exp_pg1.DiscoveryInfo = 0;
+            exp_pg1.AttachedPhyIdentifier = phy_id;
         } else {
             return -1;
         }
@@ -2685,6 +2699,7 @@ static void mpt3sas_handle_smp_passthrough(MPT3SASState *s, uint16_t smid, uint8
                 uint8_t expander_idx = 0;
                 uint32_t target_scsi_id = 0;
                 SCSIDevice *sdev = NULL;
+                SCSISESState *encl_dev = NULL;
 
                 memset(&disrep, 0, sizeof(disrep));
 
@@ -2708,14 +2723,24 @@ static void mpt3sas_handle_smp_passthrough(MPT3SASState *s, uint16_t smid, uint8
                 // SAS expander address
                 *(uint64_t *)disrep.sas_addr = cpu_to_be64(req->SASAddress);
 
+                // search expander id in device list based on sas address in rquest
+                BusChild *kid;
+                QTAILQ_FOREACH_REVERSE(kid, &s->bus.qbus.children, ChildrenHead, sibling){
+                    SCSIDevice *tmp_dev = SCSI_DEVICE((DeviceState *)kid->child);
+                    if (tmp_dev->type == TYPE_ENCLOSURE && (tmp_dev->wwn + 1) == req->SASAddress) {
+                        encl_dev = (SCSISESState *)tmp_dev;
+                        expander_idx = scsi_id_to_expander_id(s, tmp_dev->id);
+                    }
+                }
+
                 if ((phy_id >= s->expander.upstream_start_phy) &&
-                        (phy_id < s->expander.upstream_start_phy + s->expander.upstream_phys)) {
+                        (phy_id < s->expander.upstream_start_phy + s->expander.upstream_phys)) { //primary port
                     disrep.attached_dev_type = MPI2_SAS_DEVICE_INFO_END_DEVICE & 0x7;
                     disrep.linkrate = MPI25_SAS_NEG_LINK_RATE_12_0 & 0xF;
                     disrep.iproto = ((MPI2_SAS_DEVICE_INFO_SSP_INITIATOR | MPI2_SAS_DEVICE_INFO_STP_INITIATOR | MPI2_SAS_DEVICE_INFO_SMP_INITIATOR) >> 4) & 0x7;
 
                     // HBA controller SAS address
-                    *(uint64_t *)disrep.attached_sas_addr = cpu_to_be64(s->sas_address);
+                    *(uint64_t *)disrep.attached_sas_addr = cpu_to_be64(encl_dev->primary_port_attached_sas_address);
 
                     disrep.hmin_linkrate = MPI2_SAS_HWRATE_MIN_RATE_1_5;
                     disrep.pmin_linkrate = MPI2_SAS_PRATE_MIN_RATE_1_5;
@@ -2723,19 +2748,23 @@ static void mpt3sas_handle_smp_passthrough(MPT3SASState *s, uint16_t smid, uint8
                     disrep.pmax_linkrate = MPI25_SAS_PRATE_MIN_RATE_12_0 >> 4;
                     disrep.change_count = 0x1;
                     disrep.routing_attr = MPI2_SAS_PHYINFO_TABLE_ROUTING >> 4;
-                    disrep.attached_phy_id = phy_id - 4;
-                } else if (phy_id >= s->expander.expansion_start_phy && phy_id < s->expander.expansion_start_phy + s->expander.expansion_phys) {
-                    disrep.attached_dev_type = MPI2_SAS_DEVICE_INFO_NO_DEVICE;
-                } else {
-                    // search expander id in device list based on sas address in rquest
-                    BusChild *kid;
-                    QTAILQ_FOREACH_REVERSE(kid, &s->bus.qbus.children, ChildrenHead, sibling){
-                        SCSIDevice *tmp_dev = SCSI_DEVICE((DeviceState *)kid->child);
-                        if (tmp_dev->type == TYPE_ENCLOSURE && (tmp_dev->wwn + 1) == req->SASAddress) {
-                            expander_idx = ((SCSISESState *)tmp_dev)->side;
-                        }
-                    }
+                    disrep.attached_phy_id = phy_id - s->expander.upstream_start_phy;
+                } else if (phy_id >= s->expander.expansion_start_phy && phy_id < s->expander.expansion_start_phy + s->expander.expansion_phys) { //expansion port
+                    disrep.attached_dev_type = MPI2_SAS_DEVICE_INFO_END_DEVICE & 0x7;
+                    disrep.linkrate = MPI25_SAS_NEG_LINK_RATE_12_0 & 0xF;
+                    disrep.iproto = ((MPI2_SAS_DEVICE_INFO_SSP_INITIATOR | MPI2_SAS_DEVICE_INFO_STP_INITIATOR | MPI2_SAS_DEVICE_INFO_SMP_INITIATOR) >> 4) & 0x7;
 
+                    // HBA controller SAS address
+                    *(uint64_t *)disrep.attached_sas_addr = cpu_to_be64(encl_dev->expansion_port_attached_sas_address);
+
+                    disrep.hmin_linkrate = MPI2_SAS_HWRATE_MIN_RATE_1_5;
+                    disrep.pmin_linkrate = MPI2_SAS_PRATE_MIN_RATE_1_5;
+                    disrep.hmax_linkrate = MPI25_SAS_HWRATE_MAX_RATE_12_0 >> 4;
+                    disrep.pmax_linkrate = MPI25_SAS_PRATE_MIN_RATE_12_0 >> 4;
+                    disrep.change_count = 0x1;
+                    disrep.routing_attr = MPI2_SAS_PHYINFO_TABLE_ROUTING >> 4;
+                    disrep.attached_phy_id = phy_id - s->expander.upstream_start_phy;
+                } else {
                     target_scsi_id = expander_phy_id_to_scsi_id(s, expander_idx, phy_id);
 
                     sdev = scsi_device_find(&s->bus, 0, target_scsi_id, 0);
@@ -2752,6 +2781,8 @@ static void mpt3sas_handle_smp_passthrough(MPT3SASState *s, uint16_t smid, uint8
                         disrep.pmax_linkrate = MPI25_SAS_PRATE_MIN_RATE_12_0 >> 4;
                         disrep.tproto = MPI2_SAS_DEVICE_INFO_SSP_TARGET >> 8;
                         *(uint64_t *)disrep.attached_sas_addr = cpu_to_be64(sdev->port_wwn);
+                        if (sdev->port_wwn && sdev->wwn)
+                            disrep.attached_phy_id = sdev->port_wwn - sdev->wwn - 1;
                         disrep.change_count = 0x1;
                         disrep.routing_attr = MPI2_SAS_PHYINFO_TABLE_ROUTING >> 4;
                         if (sdev->type == TYPE_ENCLOSURE) {
@@ -3987,8 +4018,8 @@ static Property mpt3sas_properties[] = {
     DEFINE_PROP_UINT32("expander-count", MPT3SASState, expander.count, MPT3SAS_EXPANDER_COUNT),
     DEFINE_PROP_UINT32("expander-phys", MPT3SASState, expander.all_phys, 36),
     DEFINE_PROP_UINT64("downstream-phys-bitmap", MPT3SASState, expander.downstream_phys_bitmap, 0xFFFFFF800),
-    DEFINE_PROP_UINT64("upstream-phys-bitmap", MPT3SASState, expander.upstream_phys_bitmap, 0xF0),
-    DEFINE_PROP_UINT64("expansion-phys-bitmap", MPT3SASState, expander.expansion_phys_bitmap, 0xF),
+    DEFINE_PROP_UINT64("upstream-phys-bitmap", MPT3SASState, expander.upstream_phys_bitmap, 0xF),
+    DEFINE_PROP_UINT64("expansion-phys-bitmap", MPT3SASState, expander.expansion_phys_bitmap, 0xF0),
     DEFINE_PROP_END_OF_LIST(),
 };
 

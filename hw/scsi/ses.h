@@ -37,6 +37,9 @@ struct SCSISESState {
     char *product;
     uint8_t dae_type;
     uint8_t side;
+    uint8_t physical_port;
+    uint64_t primary_port_attached_sas_address;
+    uint64_t expansion_port_attached_sas_address;
     QemuThread eses_sas_info_thread;
     void *eses_sas_info; // should be terminator_sas_virtual_phy_info_t
 };

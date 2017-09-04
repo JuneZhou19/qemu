@@ -5113,7 +5113,10 @@ static fbe_status_t addl_elem_stat_page_dev_slot_phy_desc_get_sas_addr(
     scsi_id = phy_id + virtual_phy_handle->side * (max_phys + 1);
 
     if ((d = scsi_device_find(bus, 0, scsi_id, 0)) != NULL) {
-        *sas_address = d->wwn;
+        if (d->type == TYPE_DISK)
+            *sas_address = d->port_wwn;
+        else
+            *sas_address = d->wwn;
     }
 
     return(status);
@@ -6415,6 +6418,7 @@ static fbe_status_t emc_stat_page_sas_conn_info_elem_get_attach_sas_addr(termina
                     // Indicates the connector belongs to the primary port
                     // fixme
                     //status = terminator_get_upstream_wideport_sas_address(virtual_phy_handle, attached_sas_address);
+                    *attached_sas_address = 0x351866d000000000;
                     *sub_encl_id = FBE_ESES_SUBENCL_SIDE_ID_INVALID;
                     break;
                 case CONN_IS_RANGE0:

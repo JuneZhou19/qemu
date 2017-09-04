@@ -977,7 +977,7 @@ static size_t mpt3sas_config_sas_device_0(MPT3SASState *s, uint8_t **data, int a
                                                                         &sas_device_pg0.ParentDevHandle,
                                                                         &sas_device_pg0.DevHandle);
 
-        sas_device_pg0.PhyNum = sas_device_pg0.ParentDevHandle - MPT3SAS_IOC_HANDLE_START;
+        sas_device_pg0.PhyNum = 4 * sas_device_pg0.PhysicalPort;
         sas_device_pg0.AttachedPhyIdentifier = sas_device_pg0.PhyNum;
         sas_device_pg0.Flags = cpu_to_le16(MPI2_SAS_DEVICE0_FLAGS_DEVICE_PRESENT | MPI2_SAS_DEVICE0_FLAGS_ENCL_LEVEL_VALID);
         sas_device_pg0.DmaGroup = MPT3SAS_EXPANDER_HANDLE_START;

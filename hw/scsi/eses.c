@@ -6412,13 +6412,15 @@ static fbe_status_t emc_stat_page_sas_conn_info_elem_get_attach_sas_addr(termina
                     // Indicates the connector belongs to the extension port
                     // FIXME
                     //status = terminator_get_downstream_wideport_sas_address(virtual_phy_handle, attached_sas_address);
+                    *attached_sas_address = ((SCSISESState *)(s->ses_dev))->expansion_port_attached_sas_address;
                     *sub_encl_id = FBE_ESES_SUBENCL_SIDE_ID_INVALID;
                     break;
                 case CONN_IS_UPSTREAM:
                     // Indicates the connector belongs to the primary port
                     // fixme
                     //status = terminator_get_upstream_wideport_sas_address(virtual_phy_handle, attached_sas_address);
-                    *attached_sas_address = 0x351866d000000000;
+                    //*attached_sas_address = 0x351866d000000000;
+                    *attached_sas_address = ((SCSISESState *)(s->ses_dev))->primary_port_attached_sas_address;
                     *sub_encl_id = FBE_ESES_SUBENCL_SIDE_ID_INVALID;
                     break;
                 case CONN_IS_RANGE0:

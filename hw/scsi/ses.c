@@ -730,7 +730,14 @@ static void scsi_ses_emulate_read_data(SCSIRequest *req)
 
 static void scsi_ses_emulate_mode_select(SCSISESReq *r, uint8_t *inbuf)
 {
+    scsi_req_complete(&r->req, GOOD);
 }
+
+static void scsi_ses_emulate_send_diag(SCSISESReq *r, uint8_t *inbuf)
+{
+    scsi_req_complete(&r->req, GOOD);
+}
+
 
 static void scsi_ses_emulate_write_data(SCSIRequest *req)
 {
@@ -751,6 +758,7 @@ static void scsi_ses_emulate_write_data(SCSIRequest *req)
         scsi_ses_emulate_mode_select(r, r->iov.iov_base);
         break;
     case SEND_DIAGNOSTIC:
+        scsi_ses_emulate_send_diag(r, r->iov.iov_base);
         break;
 
     default:

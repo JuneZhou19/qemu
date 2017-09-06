@@ -970,7 +970,6 @@ static size_t mpt3sas_config_sas_device_0(MPT3SASState *s, uint8_t **data, int a
         uint64_t expander_sas_addr = get_expander_sas_address(s, expander_idx);
 
         sas_device_pg0.EnclosureHandle = MPT3SAS_EXPANDER_ENCLOSURE_HANDLE + expander_idx;
-        sas_device_pg0.AttachedPhyIdentifier = 0; //TODO same with physical io controller
         sas_device_pg0.SASAddress = cpu_to_le64(expander_sas_addr);
         sas_device_pg0.DeviceInfo = mpt3sas_get_sas_expander_device_info(s, expander_idx,
                                                                         &sas_device_pg0.PhysicalPort,
@@ -2389,9 +2388,11 @@ static void mpt3sas_handle_scsi_task_management(MPT3SASState *s, uint16_t smid, 
 reply_maybe_async:
             if (reply_async->TerminationCount < count) {
                 reply_async->IOCLogInfo = count;
+                trace_mpt3sas_handle_scsi_task_management_terminate(req->TaskType, reply_async->TerminationCount, count);
                 return;
             }
             g_free(reply_async);
+            reply.ResponseCode = MPI2_SCSITASKMGMT_RSP_TM_SUCCEEDED;
             reply.TerminationCount = count;
             break;
         case MPI2_SCSITASKMGMT_TASKTYPE_LOGICAL_UNIT_RESET:
@@ -2400,13 +2401,15 @@ reply_maybe_async:
                 reply.IOCStatus = status;
                 goto out;
             }
+            reply.ResponseCode = MPI2_SCSITASKMGMT_RSP_TM_SUCCEEDED;
             qdev_reset_all(&sdev->qdev);
             break;
         case MPI2_SCSITASKMGMT_TASKTYPE_TARGET_RESET:
             QTAILQ_FOREACH(kid, &s->bus.qbus.children, sibling) {
                 sdev = SCSI_DEVICE(kid->child);
                 if (sdev->channel == 0 && sdev->id == HANDLE_TO_SCSI_ID(req->DevHandle)) {
-                    qdev_reset_all(kid->child);
+                    reply.ResponseCode = MPI2_SCSITASKMGMT_RSP_TM_SUCCEEDED;
+                   qdev_reset_all(kid->child);
                 }
             }
             break;
@@ -2415,6 +2418,7 @@ reply_maybe_async:
             break;
     }
 out:
+    trace_mpt3sas_handle_scsi_task_management_resp_code(req->TaskType, reply.ResponseCode);
     mpt3sas_post_reply(s, smid, msix_index, (MPI2DefaultReply_t *)&reply);
 
 }

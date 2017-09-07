@@ -693,6 +693,35 @@ static void insert_inq_page_number_list(uint8_t* src, uint8_t end_page,
     }
 }
 
+static char *replace_underline(char *src, char *dst)
+{
+    char *pch = NULL;
+    char *save;
+    char *tmp = NULL;
+
+    if (!src || !dst) {
+        return NULL;
+    }
+
+    tmp = malloc(strlen(src));
+    if (NULL == tmp)
+        return NULL;
+
+    strcpy(tmp, src);
+    pch = strtok_r(tmp, "_", &save);
+
+    while (pch) {
+        strcat(dst, pch);
+        pch = strtok_r(NULL, "_", &save);
+        if (pch) {
+            strcat(dst, " ");
+        }
+    }
+
+    free(tmp);
+    return dst;
+}
+
 static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
 {
     SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, req->dev);
@@ -700,6 +729,7 @@ static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
 
     int buflen = 0;
     int start;
+    char tmp_product[16] = {0};
 
     if (req->cmd.buf[1] & 0x1) {
         /* Vital product data */
@@ -1019,7 +1049,8 @@ static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
     outbuf[0] = s->qdev.type & 0x1f;
     outbuf[1] = (s->features & (1 << SCSI_DISK_F_REMOVABLE)) ? 0x80 : 0;
 
-    strpadcpy((char *) &outbuf[16], 16, s->product, ' ');
+	replace_underline(s->product, tmp_product);
+    strpadcpy((char *) &outbuf[16], 16, tmp_product, ' ');
     strpadcpy((char *) &outbuf[8], 8, s->vendor, ' ');
 
     memset(&outbuf[32], 0, 4);
@@ -1042,10 +1073,6 @@ static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
                    the additional length is not adjusted */
             outbuf[4] = 36 - 5;
         }
-    }
-
-    if (s->serial) {
-        memcpy(&outbuf[36], s->serial, strlen(s->serial));
     }
 
     if (s->serial) {

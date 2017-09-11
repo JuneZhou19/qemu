@@ -115,7 +115,7 @@ typedef struct SCSIDiskState
     bool tray_locked;
     uint32_t rotation;
     uint64_t format_time_emulation;
-    double progress;
+    uint8_t progress;
     bool format_in_progress;
     char *page_file;
     uint8_t* page_buffer;

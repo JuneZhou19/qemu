@@ -543,7 +543,7 @@ static void machine_class_init(ObjectClass *oc, void *data)
         "Configure KVM in-kernel irqchip", &error_abort);
 
     object_class_property_add(oc, "spid", "int",
-        machine_get_spid, machine_set-spid,
+        machine_get_spid, machine_set_spid,
         NULL, NULL, &error_abort);
     object_class_property_set_description(oc, "spid",
         "SPID for this machine, 0 is SPA and 1 is SPB",&error_abort);

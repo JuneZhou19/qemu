@@ -8,6 +8,8 @@
 #include "ses.h"
 #include "hw/pci/pci.h"
 #include "mpt3sas.h"
+#include "trace.h"
+#include "trace/control.h"
 
 #include "hw/boards.h"  // for current_machine
 

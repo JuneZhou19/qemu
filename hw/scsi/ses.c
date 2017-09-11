@@ -279,41 +279,66 @@ static fbe_status_t build_configuration_diagnostic_page(SCSIRequest *req, uint8_
     return status;
 }
 
-static fbe_status_t build_emc_statistics_status_diagnostic_page(SCSIRequest *req, uint8_t *outbuf)
+static fbe_status_t build_emc_statistics_status_diagnostic_page(
+        SCSIRequest *req, uint8_t *outbuf)
 {
     SCSISESState *s = DO_UPCAST(SCSISESState, qdev, req->dev);
     terminator_sas_virtual_phy_info_t * info = s->eses_sas_info;
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     ses_common_pg_hdr_struct *emc_statistics_stat_page_hdr;
-    uint8_t *elem_stats_start_ptr = NULL; 
     uint8_t *elem_stats_end_ptr = NULL;
     //fbe_sas_enclosure_type_t  encl_type = info->enclosure_type;
 
-    emc_statistics_stat_page_hdr = (ses_common_pg_hdr_struct *)outbuf;
+    emc_statistics_stat_page_hdr = (ses_common_pg_hdr_struct *) outbuf;
     memset(emc_statistics_stat_page_hdr, 0, sizeof(ses_common_pg_hdr_struct));
 
     emc_statistics_stat_page_hdr->pg_code = SES_PG_CODE_EMC_STATS_STAT;
 
     // Gen code returned in bigEndian format.
     status = config_page_get_gen_code(info, 
-                                      &emc_statistics_stat_page_hdr->gen_code);
-    emc_statistics_stat_page_hdr->gen_code = 
-        bswap32(emc_statistics_stat_page_hdr->gen_code);
+            &emc_statistics_stat_page_hdr->gen_code);
+    emc_statistics_stat_page_hdr->gen_code = bswap32(
+            emc_statistics_stat_page_hdr->gen_code);
 
+    elem_stats_end_ptr = (uint8_t *) (emc_statistics_stat_page_hdr + 1);
 
-    elem_stats_start_ptr = (uint8_t *)(emc_statistics_stat_page_hdr + 1);
-    status = emc_statistics_stat_page_build_device_slot_stats(info, elem_stats_start_ptr, 
-                                                              &elem_stats_end_ptr);
+    status = emc_statistics_stat_page_build_power_supply_stats(info, elem_stats_end_ptr, &elem_stats_end_ptr);
 
     if (status != FBE_STATUS_OK)
         return status;
 
-    emc_statistics_stat_page_hdr->pg_len = 
-        (uint16_t)((elem_stats_end_ptr - ((uint8_t *)emc_statistics_stat_page_hdr)) - 4);
-    // Always return page length in big endian format as actual expander firmware does that.
-    emc_statistics_stat_page_hdr->pg_len = bswap16(emc_statistics_stat_page_hdr->pg_len);
+    status = emc_statistics_stat_page_build_cooling_stats(info, elem_stats_end_ptr, &elem_stats_end_ptr);
 
-    return(status);     
+    if (status != FBE_STATUS_OK)
+        return status;
+
+    status = emc_statistics_stat_page_build_temp_sensor_stats(info, elem_stats_end_ptr, &elem_stats_end_ptr);
+
+    if (status != FBE_STATUS_OK)
+        return status;
+
+    status = emc_statistics_stat_page_build_exp_phy_stats(info, elem_stats_end_ptr, &elem_stats_end_ptr);
+
+    if (status != FBE_STATUS_OK)
+        return status;
+
+    status = emc_statistics_stat_page_build_device_slot_stats(info, elem_stats_end_ptr, &elem_stats_end_ptr);
+
+    if (status != FBE_STATUS_OK)
+        return status;
+
+    status = emc_statistics_stat_page_build_sas_exp_stats(info, elem_stats_end_ptr, &elem_stats_end_ptr);
+
+    if (status != FBE_STATUS_OK)
+        return status;
+
+    emc_statistics_stat_page_hdr->pg_len = (uint16_t) ((elem_stats_end_ptr
+            - ((uint8_t *) emc_statistics_stat_page_hdr)) - 4);
+    // Always return page length in big endian format as actual expander firmware does that.
+    emc_statistics_stat_page_hdr->pg_len = bswap16(
+            emc_statistics_stat_page_hdr->pg_len);
+
+    return (status);
 }
 
 static fbe_status_t build_additional_element_status_diagnostic_page(SCSIRequest *req, uint8_t *outbuf)

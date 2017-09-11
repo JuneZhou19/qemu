@@ -1733,6 +1733,38 @@ typedef struct ses_common_statistics_field_s
     uint8_t stats_len;    // Byte 1. (n-1)
 } ses_common_statistics_field_t;
 
+typedef struct fbe_eses_power_supply_stats_s
+{
+    ses_common_statistics_field_t common_stats; // Bytes 0-1
+    uint8_t   dc_over_voltage_count;
+    uint8_t   dc_under_voltage_count;
+    uint8_t   fail_count;
+    uint8_t   over_tempe_fail_count;
+    uint8_t   ac_fail_count;
+    uint8_t   dc_fail_count;
+}fbe_eses_power_supply_stats_t;
+
+
+typedef struct fbe_eses_cooling_stats_s
+{
+    ses_common_statistics_field_t common_stats; // Bytes 0-1
+    uint8_t    fail_count;
+}fbe_eses_cooling_stats_t;
+
+
+typedef struct fbe_eses_temperature_stats_s
+{
+    ses_common_statistics_field_t common_stats; // Bytes 0-1
+    uint8_t    ot_fail_count;
+    uint8_t    ot_warning_count;
+}fbe_eses_temperature_stats_t;
+
+typedef struct fbe_eses_exp_stats_s
+{
+    ses_common_statistics_field_t common_stats; // Bytes 0-1
+    uint16_t   exp_change_count;
+}fbe_eses_exp_stats_t;
+
 typedef struct fbe_eses_device_slot_stats_s
 {
     ses_common_statistics_field_t common_stats; // Bytes 0-1
@@ -2226,6 +2258,11 @@ fbe_status_t config_page_set_all_ver_descs_in_config_page(fbe_u8_t *config_page,
 fbe_status_t enclosure_status_diagnostic_page_build_status_elements( fbe_u8_t *encl_stat_diag_page_start_ptr, fbe_u8_t **stat_elem_end_ptr, terminator_sas_virtual_phy_info_t *info); 
 
 fbe_status_t emc_statistics_stat_page_build_device_slot_stats(terminator_sas_virtual_phy_info_t *info, uint8_t *device_slot_stats_start_ptr, uint8_t **device_slot_stats_end_ptr);
+fbe_status_t emc_statistics_stat_page_build_power_supply_stats(terminator_sas_virtual_phy_info_t *s, uint8_t *device_slot_stats_start_ptr, uint8_t **device_slot_stats_end_ptr);
+fbe_status_t emc_statistics_stat_page_build_cooling_stats(terminator_sas_virtual_phy_info_t *s, uint8_t *device_slot_stats_start_ptr, uint8_t **device_slot_stats_end_ptr);
+fbe_status_t emc_statistics_stat_page_build_temp_sensor_stats(terminator_sas_virtual_phy_info_t *s, uint8_t *device_slot_stats_start_ptr, uint8_t **device_slot_stats_end_ptr);
+fbe_status_t emc_statistics_stat_page_build_sas_exp_stats(terminator_sas_virtual_phy_info_t *s, uint8_t *device_slot_stats_start_ptr, uint8_t **device_slot_stats_end_ptr);
+fbe_status_t emc_statistics_stat_page_build_exp_phy_stats(terminator_sas_virtual_phy_info_t *s, uint8_t *device_slot_stats_start_ptr, uint8_t **device_slot_stats_end_ptr);
 fbe_status_t emc_encl_stat_diag_page_build_sas_conn_inf_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *sas_conn_elem_start_ptr, uint8_t **sas_conn_elem_end_ptr, uint8_t *num_sas_conn_info_elem);
 fbe_status_t emc_encl_stat_diag_page_build_trace_buffer_inf_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *trace_buffer_elem_start_ptr, uint8_t **trace_buffer_elem_end_ptr, uint8_t *num_trace_buffer_info_elem);
 fbe_status_t emc_encl_stat_diag_page_build_general_info_expander_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *general_info_elem_start_ptr, uint8_t **general_info_elem_end_ptr, uint8_t *num_general_info_elem);

@@ -3665,7 +3665,25 @@ static fbe_status_t get_start_elem_offset_by_config_page_info(terminator_eses_co
     // Ignore type descriptor text related parameters for now.
     UNREFERENCED_PARAMETER(consider_type_desc_text);
     UNREFERENCED_PARAMETER(type_desc_text);
+/*
+    if (elem_type == SES_ELEM_TYPE_TEMP_SENSOR)
+    {
+        DPRINTF("exp, subencl_type=%d, side=%d, elem_type=%d, consider_number=%d, consider_id=%d\n", subencl_type, side, elem_type, consider_num_possible_elems, consider_sub_encl_id );
+        for(i=0; i < config_page_info->num_type_desc_headers ;i++)
+        {
+            DPRINTF("i=%d, subencl_type=%d, side=%d, elem_type=%d, offset=%d, number=%d, subencl_id=%d, first_index=%d\n", i,
+                    config_page_info->subencl_desc_array[config_page_info->type_desc_array[i].subencl_id].subencl_type,
+                    config_page_info->subencl_desc_array[config_page_info->type_desc_array[i].subencl_id].side,
+                    config_page_info->type_desc_array[i].elem_type,
+                    config_page_info->offset_of_first_elem_array[i],
+                    config_page_info->type_desc_array[i].num_possible_elems,
+                    config_page_info->type_desc_array[i].subencl_id,
+                    config_page_info->elem_index_of_first_elem_array[i]
+                    );
+        }
+    }
 
+*/
     for(i=0; i < config_page_info->num_type_desc_headers ;i++)
     {
         if((config_page_info->type_desc_array[i].elem_type == elem_type) &&
@@ -3687,7 +3705,6 @@ static fbe_status_t get_start_elem_offset_by_config_page_info(terminator_eses_co
     // on magnum DPE and not monitored by the ESES talking EMA.
     return(FBE_STATUS_COMPONENT_NOT_FOUND);
 }
-
 
 /*********************************************************************
 * get_start_elem_index_by_config_page_info ()
@@ -3731,6 +3748,7 @@ static fbe_status_t get_start_elem_index_by_config_page_info(terminator_eses_con
 
     for(i=0; i < config_page_info->num_type_desc_headers ;i++)
     {
+/*
         DPRINTF("%s:%d expected subencl_type %d expected side %d expected elem_type 0x%x, searching subencl type 0x%x subencl id %d side %d elem type 0x%x\n",
                 __func__, __LINE__,
                 subencl_type, side, elem_type,
@@ -3738,7 +3756,7 @@ static fbe_status_t get_start_elem_index_by_config_page_info(terminator_eses_con
                 config_page_info->type_desc_array[i].subencl_id,
                 config_page_info->subencl_desc_array[config_page_info->type_desc_array[i].subencl_id].side,
                 config_page_info->type_desc_array[i].elem_type);
-
+*/
         if((config_page_info->type_desc_array[i].elem_type == elem_type) &&
            ((!consider_num_possible_elems) || (config_page_info->type_desc_array[i].num_possible_elems == num_possible_elems)) &&
            ((config_page_info->subencl_desc_array[config_page_info->type_desc_array[i].subencl_id].subencl_type)
@@ -3924,8 +3942,8 @@ fbe_status_t enclosure_status_diagnostic_page_build_status_elements(
     // Build Array device slot status elements.
     status = config_page_get_start_elem_offset_in_stat_page(info,
                                                             SES_SUBENCL_TYPE_LCC,
-                                                            spid, 
-                                                            SES_ELEM_TYPE_ARRAY_DEV_SLOT, 
+                                                            spid,
+                                                            SES_ELEM_TYPE_ARRAY_DEV_SLOT,
                                                             FALSE,
                                                             0,
                                                             FALSE,
@@ -4463,6 +4481,7 @@ fbe_status_t enclosure_status_diagnostic_page_build_status_elements(
     }
     else if(status == FBE_STATUS_OK)
     {
+        DPRINTF("1 stat_elem_byte_offset=%d\n", stat_elem_byte_offset);
         stat_elem_start_ptr = encl_stat_diag_page_start_ptr + stat_elem_byte_offset;
         status = enclosure_status_diagnostic_page_build_local_temp_sensor_status_elements(stat_elem_start_ptr, 
                                                                                         stat_elem_end_ptr, 
@@ -4473,7 +4492,7 @@ fbe_status_t enclosure_status_diagnostic_page_build_status_elements(
     //Build Peer Temperature Sensor elements
     status = config_page_get_start_elem_offset_in_stat_page(info,
                                                             SES_SUBENCL_TYPE_LCC,
-                                                            (encl_type == FBE_SAS_ENCLOSURE_TYPE_VOYAGER_ICM)? 3:1, 
+                                                            (encl_type == FBE_SAS_ENCLOSURE_TYPE_VOYAGER_ICM)? 3:1,
                                                             SES_ELEM_TYPE_TEMP_SENSOR, 
                                                             FALSE,
                                                             0,
@@ -4492,6 +4511,7 @@ fbe_status_t enclosure_status_diagnostic_page_build_status_elements(
     }
     else if(status == FBE_STATUS_OK)
     {
+        DPRINTF("2 stat_elem_byte_offset=%d\n", stat_elem_byte_offset);
         stat_elem_start_ptr = encl_stat_diag_page_start_ptr + stat_elem_byte_offset;
         status = enclosure_status_diagnostic_page_build_peer_temp_sensor_status_elements(stat_elem_start_ptr, 
                                                                                          stat_elem_end_ptr,
@@ -4521,6 +4541,7 @@ fbe_status_t enclosure_status_diagnostic_page_build_status_elements(
     }
     else if(status == FBE_STATUS_OK)
     {
+        DPRINTF("3 stat_elem_byte_offset=%d\n", stat_elem_byte_offset);
         stat_elem_start_ptr = encl_stat_diag_page_start_ptr + stat_elem_byte_offset;
         status = enclosure_status_diagnostic_page_build_chassis_temp_sensor_status_elements(stat_elem_start_ptr, 
                                                                                             stat_elem_end_ptr,
@@ -4868,22 +4889,418 @@ fbe_status_t enclosure_status_diagnostic_page_build_status_elements(
 
 }
 
-fbe_status_t 
-emc_statistics_stat_page_build_device_slot_stats(terminator_sas_virtual_phy_info_t *s, uint8_t *device_slot_stats_start_ptr, 
+#define GET_OFFSET(x)  (uint8_t)((x - FBE_ESES_PAGE_HEADER_SIZE) / (FBE_ESES_CTRL_STAT_ELEM_SIZE))
+fbe_status_t emc_statistics_stat_page_build_power_supply_stats(terminator_sas_virtual_phy_info_t *s, uint8_t *device_slot_stats_start_ptr,
+                                                 uint8_t **device_slot_stats_end_ptr)
+{
+    fbe_status_t                   status = FBE_STATUS_GENERIC_FAILURE;
+    terminator_sp_id_t             spid;
+    fbe_u16_t                      offset = 0;
+    fbe_eses_power_supply_stats_t* pwr_elem_stats = (fbe_eses_power_supply_stats_t*)device_slot_stats_start_ptr;
+
+    status =  fbe_terminator_api_get_sp_id(s, &spid);
+    if ( s->enclosure_type == FBE_SAS_ENCLOSURE_TYPE_TABASCO)
+    {
+        // Build PS A status element
+        status = config_page_get_start_elem_offset_in_stat_page(s,
+                                                                SES_SUBENCL_TYPE_PS,
+                                                                spid,
+                                                                SES_ELEM_TYPE_PS,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                NULL,
+                                                                &offset);
+        if (status == FBE_STATUS_OK)
+        {
+            offset = (uint8_t)((offset - FBE_ESES_PAGE_HEADER_SIZE) / (FBE_ESES_CTRL_STAT_ELEM_SIZE));
+            offset += 1;    // skip overall element.
+            memset(pwr_elem_stats, 0, sizeof(fbe_eses_power_supply_stats_t));
+            pwr_elem_stats->common_stats.elem_offset = offset;
+            pwr_elem_stats->common_stats.stats_len = sizeof(fbe_eses_power_supply_stats_t) - sizeof(ses_common_statistics_field_t);
+            pwr_elem_stats->ac_fail_count = 0;
+            pwr_elem_stats ++;
+        }
+        else if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+        {
+            return status;
+        }
+
+        // Build PS B status element
+        status = config_page_get_start_elem_offset_in_stat_page(s,
+                                                                SES_SUBENCL_TYPE_PS,
+                                                                1 - spid,
+                                                                SES_ELEM_TYPE_PS,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                NULL,
+                                                                &offset);
+        if (status == FBE_STATUS_OK)
+        {
+            offset = (uint8_t)((offset - FBE_ESES_PAGE_HEADER_SIZE) / (FBE_ESES_CTRL_STAT_ELEM_SIZE));
+            offset += 1;    // skip overall element.
+            memset(pwr_elem_stats, 0, sizeof(fbe_eses_power_supply_stats_t));
+            pwr_elem_stats->common_stats.elem_offset = offset;
+            pwr_elem_stats->common_stats.stats_len = sizeof(fbe_eses_power_supply_stats_t) - sizeof(ses_common_statistics_field_t);
+            pwr_elem_stats->ac_fail_count = 0;
+            pwr_elem_stats ++;
+        }
+        else if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+        {
+            return status;
+        }
+    }
+    *device_slot_stats_end_ptr = (uint8_t*) pwr_elem_stats;
+    return FBE_STATUS_OK;
+}
+
+fbe_status_t emc_statistics_stat_page_build_cooling_stats(terminator_sas_virtual_phy_info_t *info, uint8_t *device_slot_stats_start_ptr,
                                                  uint8_t **device_slot_stats_end_ptr)
 {
     fbe_status_t                 status = FBE_STATUS_GENERIC_FAILURE;
-    fbe_eses_device_slot_stats_t *overall_device_slot_stats = NULL;
-    fbe_eses_device_slot_stats_t *individual_device_slot_stats = NULL;
-    uint16_t                    overall_device_slot_elem_addr_offset = 0;
-    uint8_t                     individual_device_slot_elem_offset = 0;
-    uint8_t                     overall_device_slot_elem_offset = 0;
-    uint8_t                     max_drive_slots = 0;
-    uint32_t                    i, j;
-    uint8_t                     device_slot_elem_stats_len = 0;    
-    fbe_sas_enclosure_type_t     encl_type = FBE_SAS_ENCLOSURE_TYPE_INVALID;
-    terminator_sp_id_t spid;
+    terminator_sp_id_t           spid;
+    fbe_u16_t                    elem_offset;
+    fbe_eses_cooling_stats_t    *elem_ptr;
 
+    fbe_u8_t                     elem_len;
+    if (info->enclosure_type == FBE_SAS_ENCLOSURE_TYPE_TABASCO)
+    {
+        elem_len = sizeof(fbe_eses_cooling_stats_t) - sizeof(ses_common_statistics_field_t);
+        elem_ptr = (fbe_eses_cooling_stats_t*) device_slot_stats_start_ptr;
+        status =  fbe_terminator_api_get_sp_id(info, &spid);
+        //Build PS A cooling elements
+        status = config_page_get_start_elem_offset_in_stat_page(info,
+                                                                SES_SUBENCL_TYPE_PS,
+                                                                spid,
+                                                                SES_ELEM_TYPE_COOLING,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                NULL,
+                                                                &elem_offset);
+
+        if(status == FBE_STATUS_OK)
+        {
+            fbe_u8_t max_cooling_elems = 0;
+            elem_offset = GET_OFFSET(elem_offset);
+
+            elem_offset += 1; // skip overall.
+            status = sas_virtual_phy_max_cooling_elems(info->enclosure_type, &max_cooling_elems, info->side);
+            for (; max_cooling_elems > 0; max_cooling_elems--)
+            {
+                // individual elem
+                memset(elem_ptr, 0, sizeof(fbe_eses_cooling_stats_t));
+                elem_ptr->common_stats.elem_offset = elem_offset;
+                elem_ptr->common_stats.stats_len = elem_len;
+                elem_ptr->fail_count = 0;
+
+                elem_ptr ++;
+                elem_offset += 1;
+            }
+        }
+        else if(status != FBE_STATUS_COMPONENT_NOT_FOUND)
+        {
+            return(status);
+        }
+
+
+
+        //Build PS B cooling elements
+
+        status = config_page_get_start_elem_offset_in_stat_page(info,
+                                                                SES_SUBENCL_TYPE_PS,
+                                                                1 - spid,
+                                                                SES_ELEM_TYPE_COOLING,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                NULL,
+                                                                &elem_offset);
+
+
+        if(status == FBE_STATUS_OK)
+        {
+            fbe_u8_t max_cooling_elems = 0;
+            elem_offset = GET_OFFSET(elem_offset);
+
+            elem_offset += 1; // skip overall.
+            status = sas_virtual_phy_max_cooling_elems(info->enclosure_type, &max_cooling_elems, !(info->side));
+            for (; max_cooling_elems > 0; max_cooling_elems--)
+            {
+                // individual elem
+                memset(elem_ptr, 0, sizeof(fbe_eses_cooling_stats_t));
+                elem_ptr->common_stats.elem_offset = elem_offset;
+                elem_ptr->common_stats.stats_len = elem_len;
+                elem_ptr->fail_count = 0;
+
+                elem_ptr ++;
+                elem_offset += 1;
+            }
+        }
+        else if(status != FBE_STATUS_COMPONENT_NOT_FOUND)
+        {
+            return(status);
+        }
+    }
+
+    *device_slot_stats_end_ptr = (uint8_t*) elem_ptr;
+    return FBE_STATUS_OK;
+}
+
+
+fbe_status_t emc_statistics_stat_page_build_temp_sensor_stats(terminator_sas_virtual_phy_info_t *info, uint8_t *device_slot_stats_start_ptr,
+                                                 uint8_t **device_slot_stats_end_ptr)
+{
+    fbe_status_t                 status = FBE_STATUS_OK;
+    terminator_sp_id_t           spid;
+    fbe_u16_t                    stat_elem_byte_offset;
+    fbe_eses_temperature_stats_t *elem_ptr;
+    fbe_sas_enclosure_type_t     encl_type = FBE_SAS_ENCLOSURE_TYPE_INVALID;
+    fbe_u8_t                     elem_len;
+
+    encl_type = info->enclosure_type;
+    elem_len = sizeof(fbe_eses_temperature_stats_t) - sizeof(ses_common_statistics_field_t);
+    elem_ptr = (fbe_eses_temperature_stats_t*) device_slot_stats_start_ptr;
+    status =  fbe_terminator_api_get_sp_id(info, &spid);
+
+    if (encl_type == FBE_SAS_ENCLOSURE_TYPE_TABASCO)
+    {
+        //Build Local Temperature Sensor elements
+        status = config_page_get_start_elem_offset_in_stat_page(info,
+                                                                SES_SUBENCL_TYPE_LCC,
+                                                                spid,
+                                                                SES_ELEM_TYPE_TEMP_SENSOR,
+                                                                TRUE,
+                                                                2,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                NULL,
+                                                                &stat_elem_byte_offset);
+
+        if ( status ==  FBE_STATUS_OK )
+        {
+            int i;
+            stat_elem_byte_offset = GET_OFFSET(stat_elem_byte_offset) + 1; // skip overall element
+
+            for (i = 0; i < 2; i++)
+            {
+                memset(elem_ptr, 0, sizeof(fbe_eses_temperature_stats_t));
+
+                elem_ptr->common_stats.elem_offset = stat_elem_byte_offset;
+                elem_ptr->common_stats.stats_len = elem_len;
+                elem_ptr->ot_fail_count = 0;
+                elem_ptr->ot_warning_count = 0;
+                elem_ptr ++;
+                stat_elem_byte_offset++;
+            }
+
+        }else if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+        {
+            return status;
+        }
+
+        //Build Chassis Temperature Sensor elements
+        status = config_page_get_start_elem_offset_in_stat_page(info,
+                                                                SES_SUBENCL_TYPE_CHASSIS,
+                                                                SIDE_UNDEFINED,
+                                                                SES_ELEM_TYPE_TEMP_SENSOR,
+                                                                TRUE,
+                                                                7,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                NULL,
+                                                                &stat_elem_byte_offset);
+        if ( status ==  FBE_STATUS_OK )
+        {
+           int i;
+           stat_elem_byte_offset = GET_OFFSET(stat_elem_byte_offset) + 1; // skip overall element
+           for (i = 0; i < 7; i++)
+           {
+               memset(elem_ptr, 0, sizeof(fbe_eses_temperature_stats_t));
+
+               elem_ptr->common_stats.elem_offset = stat_elem_byte_offset;
+               elem_ptr->common_stats.stats_len = elem_len;
+               elem_ptr->ot_fail_count = 0;
+               elem_ptr->ot_warning_count = 0;
+               elem_ptr ++;
+               stat_elem_byte_offset++;
+           }
+
+        }else if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+        {
+           return status;
+        }
+
+        //Build PS local side Temperature Sensor elements
+        status = config_page_get_start_elem_offset_in_stat_page(info,
+                                                                SES_SUBENCL_TYPE_PS,
+                                                                spid,
+                                                                SES_ELEM_TYPE_TEMP_SENSOR,
+                                                                TRUE,
+                                                                2,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                NULL,
+                                                                &stat_elem_byte_offset);
+
+        if ( status ==  FBE_STATUS_OK )
+        {
+            int i;
+            stat_elem_byte_offset = GET_OFFSET(stat_elem_byte_offset) + 1; // skip overall element
+
+            for (i = 0; i < 2; i++)
+            {
+                memset(elem_ptr, 0, sizeof(fbe_eses_temperature_stats_t));
+
+                elem_ptr->common_stats.elem_offset = stat_elem_byte_offset;
+                elem_ptr->common_stats.stats_len = elem_len;
+                elem_ptr->ot_fail_count = 0;
+                elem_ptr->ot_warning_count = 0;
+                elem_ptr ++;
+                stat_elem_byte_offset++;
+            }
+
+        }else if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+        {
+            return status;
+        }
+
+        //Build PS peer side Temperature Sensor elements
+        status = config_page_get_start_elem_offset_in_stat_page(info,
+                                                                SES_SUBENCL_TYPE_PS,
+                                                                1 - spid,
+                                                                SES_ELEM_TYPE_TEMP_SENSOR,
+                                                                TRUE,
+                                                                2,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                NULL,
+                                                                &stat_elem_byte_offset);
+
+        if ( status ==  FBE_STATUS_OK )
+        {
+            int i;
+            stat_elem_byte_offset = GET_OFFSET(stat_elem_byte_offset) + 1; // skip overall element
+
+            for (i = 0; i < 2; i++)
+            {
+                memset(elem_ptr, 0, sizeof(fbe_eses_temperature_stats_t));
+
+                elem_ptr->common_stats.elem_offset = stat_elem_byte_offset;
+                elem_ptr->common_stats.stats_len = elem_len;
+                elem_ptr->ot_fail_count = 0;
+                elem_ptr->ot_warning_count = 0;
+                elem_ptr ++;
+                stat_elem_byte_offset++;
+            }
+
+        }else if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+        {
+            return status;
+        }
+
+    }
+
+    *device_slot_stats_end_ptr = (uint8_t*)elem_ptr;
+    return FBE_STATUS_OK;
+}
+
+fbe_status_t emc_statistics_stat_page_build_sas_exp_stats(terminator_sas_virtual_phy_info_t *info, uint8_t *device_slot_stats_start_ptr,
+                                                 uint8_t **device_slot_stats_end_ptr)
+{
+    fbe_status_t                 status = FBE_STATUS_OK;
+    terminator_sp_id_t           spid;
+    fbe_u16_t                    stat_elem_byte_offset;
+    fbe_eses_exp_stats_t         *elem_ptr;
+    fbe_sas_enclosure_type_t     encl_type = FBE_SAS_ENCLOSURE_TYPE_INVALID;
+    fbe_u8_t                     elem_len;
+
+    encl_type = info->enclosure_type;
+    elem_len = sizeof(fbe_eses_exp_stats_t) - sizeof(ses_common_statistics_field_t);
+    elem_ptr = (fbe_eses_exp_stats_t*) device_slot_stats_start_ptr;
+    status =  fbe_terminator_api_get_sp_id(info, &spid);
+
+    if (encl_type == FBE_SAS_ENCLOSURE_TYPE_TABASCO)
+    {
+        status = config_page_get_start_elem_offset_in_stat_page(info,
+                                                                        SES_SUBENCL_TYPE_LCC,
+                                                                        spid,
+                                                                        SES_ELEM_TYPE_SAS_EXP,
+                                                                        TRUE,
+                                                                        1,
+                                                                        FALSE,
+                                                                        0,
+                                                                        FALSE,
+                                                                        NULL,
+                                                                        &stat_elem_byte_offset);
+        if ( status ==  FBE_STATUS_OK )
+        {
+            stat_elem_byte_offset = GET_OFFSET(stat_elem_byte_offset) + 1; // skip overall element
+
+            memset(elem_ptr, 0, sizeof(fbe_eses_exp_stats_t));
+
+            elem_ptr->common_stats.elem_offset = stat_elem_byte_offset;
+            elem_ptr->common_stats.stats_len = elem_len;
+            elem_ptr->exp_change_count = bswap16(7014);
+            elem_ptr ++;
+            stat_elem_byte_offset++;
+
+        }else if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+        {
+            return status;
+        }
+        status = config_page_get_start_elem_offset_in_stat_page(info,
+                                                                        SES_SUBENCL_TYPE_LCC,
+                                                                        1 - spid,
+                                                                        SES_ELEM_TYPE_SAS_EXP,
+                                                                        TRUE,
+                                                                        1,
+                                                                        FALSE,
+                                                                        0,
+                                                                        FALSE,
+                                                                        NULL,
+                                                                        &stat_elem_byte_offset);
+        if ( status ==  FBE_STATUS_OK )
+        {
+            stat_elem_byte_offset = GET_OFFSET(stat_elem_byte_offset) + 1; // skip overall element
+
+            memset(elem_ptr, 0, sizeof(fbe_eses_temperature_stats_t));
+
+            elem_ptr->common_stats.elem_offset = stat_elem_byte_offset;
+            elem_ptr->common_stats.stats_len = elem_len;
+            elem_ptr->exp_change_count = bswap16(7014);
+            elem_ptr ++;
+            stat_elem_byte_offset++;
+
+        }else if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+        {
+            return status;
+        }
+    }
+    *device_slot_stats_end_ptr = (uint8_t*)elem_ptr;
+     return FBE_STATUS_OK;
+}
+
+fbe_status_t emc_statistics_stat_page_build_exp_phy_stats(terminator_sas_virtual_phy_info_t *s, uint8_t *device_slot_stats_start_ptr,
+                                                 uint8_t **device_slot_stats_end_ptr)
+{
+    fbe_status_t                 status = FBE_STATUS_GENERIC_FAILURE;
+    uint32_t                    i, j;
+    terminator_sp_id_t          spid;
+    fbe_sas_enclosure_type_t     encl_type = FBE_SAS_ENCLOSURE_TYPE_INVALID;
     fbe_eses_exp_phy_stats_t     *overall_exp_phy_stats = NULL;
     fbe_eses_exp_phy_stats_t     *individual_exp_phy_stats = NULL;
     uint16_t                     overall_exp_phy_elem_addr_offset = 0;
@@ -4893,82 +5310,31 @@ emc_statistics_stat_page_build_device_slot_stats(terminator_sas_virtual_phy_info
     uint8_t                     *source_ptr = NULL;
     uint8_t                     max_phys = 0;
     uint8_t                     mapped_phy_id = 127;
+    uint8_t                     max_drive_slots = 0;
 
-    uint32_t   invalid_dword_count = 0;                
-    uint32_t   disparity_error_count = 0;             
-    uint32_t   loss_dword_sync_count = 0;            
-    uint32_t   phy_reset_fail_count = 0;            
-    uint32_t   code_violation_count = 0;           
-    uint8_t    phy_change_count = 0;              
-    uint16_t   crc_pmon_accum_count = 0;         
-    uint16_t   in_connect_crc_count = 0;        
+    uint32_t   invalid_dword_count = 0;
+    uint32_t   disparity_error_count = 0;
+    uint32_t   loss_dword_sync_count = 0;
+    uint32_t   phy_reset_fail_count = 0;
+    uint32_t   code_violation_count = 0;
+    uint8_t    phy_change_count = 0;
+    uint16_t   crc_pmon_accum_count = 0;
+    uint16_t   in_connect_crc_count = 0;
 
-    /* get the enclosure type thru the virtual_phy_handle */
+    fbe_u8_t max_conn_id_count = 0;
+    fbe_u8_t max_single_lane_port_conn_count = 0;
+    fbe_u8_t max_port_conn_count = 0;
+
     encl_type = s->enclosure_type;
-
-    status =  fbe_terminator_api_get_sp_id(s, &spid);
-
-    status = config_page_get_start_elem_offset_in_stat_page(s,
-                                                            SES_SUBENCL_TYPE_LCC,
-                                                            spid, 
-                                                            SES_ELEM_TYPE_ARRAY_DEV_SLOT, 
-                                                            FALSE,
-                                                            0,
-                                                            FALSE,
-                                                            0,
-                                                            FALSE,
-                                                            NULL,
-                                                            &overall_device_slot_elem_addr_offset);
-
-    if (status != FBE_STATUS_OK)
-        return status;
-    overall_device_slot_elem_offset = 
-        (uint8_t)((overall_device_slot_elem_addr_offset - FBE_ESES_PAGE_HEADER_SIZE) / 
-                   (FBE_ESES_CTRL_STAT_ELEM_SIZE));
-
-    device_slot_elem_stats_len = 
-        sizeof(fbe_eses_device_slot_stats_t) - sizeof(ses_common_statistics_field_t);
-
-    overall_device_slot_stats = (fbe_eses_device_slot_stats_t *)device_slot_stats_start_ptr; 
-    memset (overall_device_slot_stats, 0, sizeof(fbe_eses_device_slot_stats_t));
-    overall_device_slot_stats->common_stats.elem_offset = overall_device_slot_elem_offset;
-    overall_device_slot_stats->common_stats.stats_len = device_slot_elem_stats_len;      
-    //Ignore statistics in overall array device slot element
-
-    individual_device_slot_stats = overall_device_slot_stats; 
-    individual_device_slot_elem_offset = overall_device_slot_elem_offset;
 
     status = sas_virtual_phy_max_drive_slots(encl_type, &max_drive_slots, s->side);
     if (status != FBE_STATUS_OK)
-        return status;
-
-    for(i=0; i<max_drive_slots; i++)
-    {
-        individual_device_slot_stats ++; 
-        individual_device_slot_elem_offset ++;
-
-        memset(individual_device_slot_stats, 0, sizeof(fbe_eses_device_slot_stats_t));
-        individual_device_slot_stats->common_stats.elem_offset = 
-            individual_device_slot_elem_offset;
-        individual_device_slot_stats->common_stats.stats_len = 
-            device_slot_elem_stats_len;
-        status = sas_virtual_phy_get_drive_slot_insert_count(s, 
-                                                        i,
-                                                        &individual_device_slot_stats->insert_count);
-        if (status != FBE_STATUS_OK)
             return status;
 
-        status = sas_virtual_phy_get_drive_power_down_count(s, 
-                                                        i,
-                                                        &individual_device_slot_stats->power_down_count);
-        if (status != FBE_STATUS_OK)
-            return status;
-                                                        
-    }
-    *device_slot_stats_end_ptr = (uint8_t *)(individual_device_slot_stats + 1);   
+    status =  fbe_terminator_api_get_sp_id(s, &spid);
+     //start pop phy statistics info
+    source_ptr = device_slot_stats_start_ptr;
 
-    //start pop phy statistics info
-    source_ptr = *device_slot_stats_end_ptr;
     status = config_page_get_start_elem_offset_in_stat_page(s,
                                                             SES_SUBENCL_TYPE_LCC,
                                                             spid,
@@ -4998,6 +5364,7 @@ emc_statistics_stat_page_build_device_slot_stats(terminator_sas_virtual_phy_info
     individual_exp_phy_stats = overall_exp_phy_stats;
 
     status = sas_virtual_phy_max_phys(encl_type, &max_phys, s->side);
+
     if (status != FBE_STATUS_OK)
     {
         printf("%s: get max phys failed.\n",
@@ -5012,14 +5379,12 @@ emc_statistics_stat_page_build_device_slot_stats(terminator_sas_virtual_phy_info
         individual_exp_phy_elem_offset ++;
 
         memset(individual_exp_phy_stats, 0, sizeof(fbe_eses_exp_phy_stats_t));
-        individual_exp_phy_stats->common_stats.elem_offset =
-                individual_exp_phy_elem_offset;
-        individual_exp_phy_stats->common_stats.stats_len =
-                exp_phy_elem_stats_len;
+        individual_exp_phy_stats->common_stats.elem_offset = individual_exp_phy_elem_offset;
+        individual_exp_phy_stats->common_stats.stats_len = exp_phy_elem_stats_len;
         mapped_phy_id = 255;
-    
-    	//start inject fake count info
-	//for slot phy and connector phy we inject fake data differently just for fun
+
+        //start inject fake count info
+        //for slot phy and connector phy we inject fake data differently just for fun
         for( j = 0; j < max_drive_slots; j++ )
         {
             // Get the corresponding PHY status
@@ -5043,7 +5408,7 @@ emc_statistics_stat_page_build_device_slot_stats(terminator_sas_virtual_phy_info
             }
         }
 
-	// it is connector phy
+    // it is connector phy
         if(mapped_phy_id != i)
         {
             individual_exp_phy_stats->invalid_dword = bswap32(invalid_dword_count++);
@@ -5059,7 +5424,160 @@ emc_statistics_stat_page_build_device_slot_stats(terminator_sas_virtual_phy_info
 
     }
 
+    // fill phy status of connectors.
+
+    status = config_page_get_start_elem_offset_in_stat_page(s,
+                                                            SES_SUBENCL_TYPE_LCC,
+                                                            !spid,
+                                                            SES_ELEM_TYPE_EXP_PHY,
+                                                            FALSE,
+                                                            0,
+                                                            FALSE,
+                                                            0,
+                                                            FALSE,
+                                                            NULL,
+                                                            &overall_exp_phy_elem_addr_offset);
+
+
+    overall_exp_phy_elem_offset = GET_OFFSET(overall_exp_phy_elem_addr_offset);
+
+
+    // fill overall element.
+    individual_exp_phy_stats ++;
+    memset(individual_exp_phy_stats, 0, sizeof(fbe_eses_exp_phy_stats_t));
+    individual_exp_phy_stats->common_stats.elem_offset = overall_exp_phy_elem_offset;
+    individual_exp_phy_stats->common_stats.stats_len = exp_phy_elem_stats_len;
+
+    individual_exp_phy_stats->invalid_dword = bswap32(invalid_dword_count++);
+    individual_exp_phy_stats->disparity_error = bswap32(disparity_error_count++);
+    individual_exp_phy_stats->loss_dword_sync = bswap32(loss_dword_sync_count++);
+    individual_exp_phy_stats->phy_reset_fail = bswap32(phy_reset_fail_count++);
+    individual_exp_phy_stats->code_violation = bswap32(code_violation_count++);
+    individual_exp_phy_stats->phy_change = phy_change_count++;
+    individual_exp_phy_stats->crc_pmon_accum = bswap16(crc_pmon_accum_count++);
+    individual_exp_phy_stats->in_connect_crc = bswap16(in_connect_crc_count++);
+    overall_exp_phy_elem_offset ++;
+
+    // Get mapping based on encl_type
+    status = sas_virtual_phy_max_conn_id_count(encl_type, &max_conn_id_count, s->side);
+    RETURN_ON_ERROR_STATUS;
+
+    status = sas_virtual_phy_max_single_lane_conns_per_port(encl_type, &max_single_lane_port_conn_count, s->side);
+    RETURN_ON_ERROR_STATUS;
+
+    status = sas_virtual_phy_max_conns_per_port(encl_type, &max_port_conn_count, s->side);
+    RETURN_ON_ERROR_STATUS;
+
+    status = fbe_terminator_api_get_sp_id(s, &spid);
+    RETURN_ON_ERROR_STATUS;
+
+    // fill individual elements.
+    individual_exp_phy_elem_offset = overall_exp_phy_elem_offset;
+    for (j = 0; j < max_conn_id_count; j++)
+    {
+        for (i = 0; i < max_single_lane_port_conn_count; i++)
+        {
+
+        individual_exp_phy_stats ++;
+        memset(individual_exp_phy_stats, 0, sizeof(fbe_eses_exp_phy_stats_t));
+        individual_exp_phy_stats->common_stats.elem_offset = individual_exp_phy_elem_offset;
+        individual_exp_phy_stats->common_stats.stats_len = exp_phy_elem_stats_len;
+
+        individual_exp_phy_stats->invalid_dword = bswap32(invalid_dword_count++);
+        individual_exp_phy_stats->disparity_error = bswap32(disparity_error_count++);
+        individual_exp_phy_stats->loss_dword_sync = bswap32(loss_dword_sync_count++);
+        individual_exp_phy_stats->phy_reset_fail = bswap32(phy_reset_fail_count++);
+        individual_exp_phy_stats->code_violation = bswap32(code_violation_count++);
+        individual_exp_phy_stats->phy_change = phy_change_count++;
+        individual_exp_phy_stats->crc_pmon_accum = bswap16(crc_pmon_accum_count++);
+        individual_exp_phy_stats->in_connect_crc = bswap16(in_connect_crc_count++);
+
+        individual_exp_phy_elem_offset ++;
+        }
+    }
+
     *device_slot_stats_end_ptr = (uint8_t *)(individual_exp_phy_stats + 1);
+
+    return(FBE_STATUS_OK);
+}
+
+
+fbe_status_t
+emc_statistics_stat_page_build_device_slot_stats(terminator_sas_virtual_phy_info_t *s, uint8_t *device_slot_stats_start_ptr,
+                                                 uint8_t **device_slot_stats_end_ptr)
+{
+    fbe_status_t                 status = FBE_STATUS_GENERIC_FAILURE;
+    fbe_eses_device_slot_stats_t *overall_device_slot_stats = NULL;
+    fbe_eses_device_slot_stats_t *individual_device_slot_stats = NULL;
+    uint16_t                    overall_device_slot_elem_addr_offset = 0;
+    uint8_t                     individual_device_slot_elem_offset = 0;
+    uint8_t                     overall_device_slot_elem_offset = 0;
+    uint8_t                     max_drive_slots = 0;
+    uint32_t                    i;
+    uint8_t                     device_slot_elem_stats_len = 0;
+    fbe_sas_enclosure_type_t     encl_type = FBE_SAS_ENCLOSURE_TYPE_INVALID;
+    terminator_sp_id_t spid;
+
+
+
+
+    /* get the enclosure type thru the virtual_phy_handle */
+    encl_type = s->enclosure_type;
+
+    status =  fbe_terminator_api_get_sp_id(s, &spid);
+
+    status = config_page_get_start_elem_offset_in_stat_page(s,
+                                                            SES_SUBENCL_TYPE_LCC,
+                                                            spid,
+                                                            SES_ELEM_TYPE_ARRAY_DEV_SLOT,
+                                                            FALSE,
+                                                            0,
+                                                            FALSE,
+                                                            0,
+                                                            FALSE,
+                                                            NULL,
+                                                            &overall_device_slot_elem_addr_offset);
+
+    if (status != FBE_STATUS_OK)
+        return status;
+    overall_device_slot_elem_offset =
+        (uint8_t)((overall_device_slot_elem_addr_offset - FBE_ESES_PAGE_HEADER_SIZE) /
+                   (FBE_ESES_CTRL_STAT_ELEM_SIZE));
+
+    device_slot_elem_stats_len =
+        sizeof(fbe_eses_device_slot_stats_t) - sizeof(ses_common_statistics_field_t);
+
+    overall_device_slot_stats = (fbe_eses_device_slot_stats_t *)device_slot_stats_start_ptr;
+    memset (overall_device_slot_stats, 0, sizeof(fbe_eses_device_slot_stats_t));
+    overall_device_slot_stats->common_stats.elem_offset = overall_device_slot_elem_offset;
+    overall_device_slot_stats->common_stats.stats_len = device_slot_elem_stats_len;
+    //Ignore statistics in overall array device slot element
+
+    individual_device_slot_stats = overall_device_slot_stats;
+    individual_device_slot_elem_offset = overall_device_slot_elem_offset;
+
+    status = sas_virtual_phy_max_drive_slots(encl_type, &max_drive_slots, s->side);
+    if (status != FBE_STATUS_OK)
+        return status;
+
+    for(i=0; i<max_drive_slots; i++)
+    {
+        individual_device_slot_stats ++;
+        individual_device_slot_elem_offset ++;
+
+        memset(individual_device_slot_stats, 0, sizeof(fbe_eses_device_slot_stats_t));
+        individual_device_slot_stats->common_stats.elem_offset = individual_device_slot_elem_offset;
+        individual_device_slot_stats->common_stats.stats_len = device_slot_elem_stats_len;
+        status = sas_virtual_phy_get_drive_slot_insert_count(s, i, &individual_device_slot_stats->insert_count);
+        if (status != FBE_STATUS_OK)
+            return status;
+
+        status = sas_virtual_phy_get_drive_power_down_count(s, i, &individual_device_slot_stats->power_down_count);
+        if (status != FBE_STATUS_OK)
+            return status;
+
+    }
+    *device_slot_stats_end_ptr = (uint8_t *)(individual_device_slot_stats + 1);
 
     return(FBE_STATUS_OK);
 }
@@ -6909,55 +7427,273 @@ fbe_status_t emc_encl_stat_diag_page_build_ps_info_elems(terminator_sas_virtual_
     fbe_status_t                    status         = FBE_STATUS_GENERIC_FAILURE;
     ses_ps_info_elem_struct        *ps_info_elem_p = NULL;
     ses_ps_info_elem_struct         terminatorEmcPsInfoStatus;
-    //terminator_vp_eses_page_info_t *vp_eses_page_info;
     terminator_sp_id_t              spid;
-    uint32_t psIndex        = 0;
+    fbe_u8_t index = 0;
 
-    //vp_eses_page_info = &s->eses_page_info;
-
-    *num_ps_info_elem = 2;
-
-    *ps_info_elem_end_ptr = ps_info_elem_start_ptr;
-    ps_info_elem_p        = (ses_ps_info_elem_struct *)ps_info_elem_start_ptr;
-
-    for (psIndex = 0; psIndex < *num_ps_info_elem; ++psIndex, ++ps_info_elem_p)
+    *num_ps_info_elem = 0;
+    if (s->enclosure_type == FBE_SAS_ENCLOSURE_TYPE_TABASCO)
     {
-        memset(ps_info_elem_p, 0, sizeof(ses_ps_info_elem_struct));
+
+        ps_info_elem_p        = (ses_ps_info_elem_struct *)ps_info_elem_start_ptr;
 
         status = sas_virtual_phy_get_emcPsInfoStatus(s, &terminatorEmcPsInfoStatus);
-        if (status != FBE_STATUS_OK)
-            return status;
+        RETURN_ON_ERROR_STATUS;
 
-        ps_info_elem_p->ps_elem_index          = psIndex;
-        ps_info_elem_p->margining_test_mode    = terminatorEmcPsInfoStatus.margining_test_mode;
-        ps_info_elem_p->margining_test_results = terminatorEmcPsInfoStatus.margining_test_results;
+        status =  fbe_terminator_api_get_sp_id(s, &spid);
+        RETURN_ON_ERROR_STATUS;
+
+        status = config_page_get_start_elem_index_in_stat_page(s,
+                                                                SES_SUBENCL_TYPE_PS,
+                                                                spid,
+                                                                SES_ELEM_TYPE_PS,
+                                                                FALSE,
+                                                                0,
+                                                                FALSE,
+                                                                NULL,
+                                                                &index);
+        RETURN_ON_ERROR_STATUS;
+
 
         status =  fbe_terminator_api_get_sp_id(s, &spid);
         if (status != FBE_STATUS_OK)
             return status;
 
+        if (status == FBE_STATUS_OK)
+        {
+            *num_ps_info_elem += 1;
+            memset(ps_info_elem_p, 0, sizeof(ses_ps_info_elem_struct));
+            ps_info_elem_p->ps_elem_index = index;
+            ps_info_elem_p->margining_test_mode    = terminatorEmcPsInfoStatus.margining_test_mode;
+            ps_info_elem_p->margining_test_results = terminatorEmcPsInfoStatus.margining_test_results;
+            ps_info_elem_p ++;
+
+        }else if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+        {
+            return status;
+        }
+
         status = config_page_get_start_elem_index_in_stat_page(s,
                                                                SES_SUBENCL_TYPE_PS,
-                                                               spid,
+                                                               1 - spid,
                                                                SES_ELEM_TYPE_PS,
                                                                FALSE,
                                                                0,
                                                                FALSE,
                                                                NULL,
-                                                               &ps_info_elem_p->ps_elem_index);
-        // some enclosures (DPE) will not report PS data, so return no fault
-        if (status == FBE_STATUS_COMPONENT_NOT_FOUND)
+                                                               &index);
+       RETURN_ON_ERROR_STATUS;
+
+
+
+       if (status == FBE_STATUS_OK)
+       {
+           *num_ps_info_elem += 1;
+           memset(ps_info_elem_p, 0, sizeof(ses_ps_info_elem_struct));
+           ps_info_elem_p->ps_elem_index = index;
+           ps_info_elem_p->margining_test_mode    = terminatorEmcPsInfoStatus.margining_test_mode;
+           ps_info_elem_p->margining_test_results = terminatorEmcPsInfoStatus.margining_test_results;
+           ps_info_elem_p ++;
+
+       }else if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+       {
+       // some enclosures (DPE) will not report PS data, so return no fault
+           return status;
+       }
+    }
+
+    *ps_info_elem_end_ptr = (uint8_t*)ps_info_elem_p;
+    return FBE_STATUS_OK;
+}
+fbe_status_t emc_encl_stat_diag_page_build_general_info_temperature_sensor_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *general_info_elem_start_ptr, uint8_t **general_info_elem_end_ptr, uint8_t *num_general_info_elem)
+{
+    int i;
+    fbe_u8_t index = 0;
+    int element_count = 0;
+    terminator_sp_id_t spid;
+    fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
+    ses_general_info_elem_temperature_sensor_struct* temp_info_p = NULL;
+    temp_info_p = (ses_general_info_elem_temperature_sensor_struct*) (general_info_elem_start_ptr);
+
+    status =  fbe_terminator_api_get_sp_id(s, &spid);
+    if (s->enclosure_type == FBE_SAS_ENCLOSURE_TYPE_TABASCO)
+    {
+        int j;
+        struct args_for_index
         {
-            return FBE_STATUS_OK;
+            ses_subencl_type_enum subencl_type;
+            terminator_eses_subencl_side side;
+            fbe_u8_t num_possible_elems;
+        } args[] =
+        {
+           {SES_SUBENCL_TYPE_LCC,  0, 2},
+           {SES_SUBENCL_TYPE_CHASSIS, SIDE_UNDEFINED, 7},
+           {SES_SUBENCL_TYPE_PS, 0, 2},
+           {SES_SUBENCL_TYPE_PS, 0, 2}
+        };
+
+
+        args[0].side = spid;
+        args[2].side = spid;
+        args[3].side = 1-spid;
+
+        for ( j = 0; j < sizeof(args) /  sizeof(args[0]); ++j)
+        {
+            status = config_page_get_start_elem_index_in_stat_page(s,
+                                                                    args[j].subencl_type,
+                                                                    args[j].side,
+                                                                    SES_ELEM_TYPE_TEMP_SENSOR,
+                                                                    TRUE,
+                                                                    args[j].num_possible_elems,
+                                                                    FALSE,
+                                                                    NULL,
+                                                                    &index);
+            if (status == FBE_STATUS_OK)
+            {
+                element_count += args[j].num_possible_elems;
+                for ( i = 0; i < args[j].num_possible_elems; i++)
+                {
+                    temp_info_p->elem_index = i + index;
+                    temp_info_p->fru = 0;
+                    temp_info_p->temperature = bswap16(4431);
+                    temp_info_p->valid = 1;
+                    temp_info_p += 1;
+                }
+                continue;
+            }
+            if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+            {
+                return status;
+            }
         }
+    }
+    *num_general_info_elem = element_count;
+    *general_info_elem_end_ptr = (uint8_t*)temp_info_p;
+    return status;
+}
+
+fbe_status_t emc_encl_stat_diag_page_build_general_info_enclosure_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *general_info_elem_start_ptr, uint8_t **general_info_elem_end_ptr, uint8_t *num_general_info_elem)
+{
+    fbe_u8_t elem_index = 0;
+    int element_count = 0;
+    terminator_sp_id_t spid;
+    fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
+    ses_general_info_elem_enclosure_struct* temp_info_p = (ses_general_info_elem_enclosure_struct*) (general_info_elem_start_ptr);
 
         if (status != FBE_STATUS_OK)
             return status;
 
-        *ps_info_elem_end_ptr += sizeof(ses_ps_info_elem_struct); // next element
-    }
+    status =  fbe_terminator_api_get_sp_id(s, &spid);
+    if (s->enclosure_type == FBE_SAS_ENCLOSURE_TYPE_TABASCO)
+    {
+       int j;
+       struct args_for_index
+       {
+           ses_subencl_type_enum subencl_type;
+           terminator_eses_subencl_side side;
+           fbe_u8_t num_possible_elems;
+       } args[] =
+       {
+          {SES_SUBENCL_TYPE_LCC,     SIDE_UNDEFINED, 1},
+          {SES_SUBENCL_TYPE_LCC,     SIDE_UNDEFINED, 1},
+          {SES_SUBENCL_TYPE_CHASSIS, SIDE_UNDEFINED, 1}
+       };
 
-    return FBE_STATUS_OK;
+       args[0].side = spid;
+       args[1].side = 1-spid;
+
+
+       for ( j = 0; j < sizeof(args) /  sizeof(args[0]); ++j)
+       {
+           status = config_page_get_start_elem_index_in_stat_page(s,
+                                                                   args[j].subencl_type,
+                                                                   args[j].side,
+                                                                   SES_ELEM_TYPE_ENCL,
+                                                                   TRUE,
+                                                                   args[j].num_possible_elems,
+                                                                   FALSE,
+                                                                   NULL,
+                                                                   &elem_index);
+           if (status == FBE_STATUS_OK)
+           {
+               element_count += 1;
+               temp_info_p->elem_index = elem_index;
+               temp_info_p->fru = 0;
+               temp_info_p->resume_from_fault = 0;
+               temp_info_p->usb_led = 1;
+               temp_info_p += 1;
+               continue;
+           }
+           if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+           {
+               return status;
+           }
+       }
+    }
+    *num_general_info_elem = element_count;
+    *general_info_elem_end_ptr = (uint8_t*)temp_info_p;
+    return status;
+}
+fbe_status_t emc_encl_stat_diag_page_build_general_info_esc_elec_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *general_info_elem_start_ptr, uint8_t **general_info_elem_end_ptr, uint8_t *num_general_info_elem)
+{
+    fbe_u8_t elem_index = 0;
+    int element_count = 0;
+    terminator_sp_id_t spid;
+    fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
+    ses_general_info_elem_esc_struct* temp_info_p = (ses_general_info_elem_esc_struct*) (general_info_elem_start_ptr);
+
+
+    status =  fbe_terminator_api_get_sp_id(s, &spid);
+    if (s->enclosure_type == FBE_SAS_ENCLOSURE_TYPE_TABASCO)
+    {
+       int j;
+       struct args_for_index
+       {
+           ses_subencl_type_enum subencl_type;
+           terminator_eses_subencl_side side;
+           fbe_u8_t num_possible_elems;
+       } args[] =
+       {
+          {SES_SUBENCL_TYPE_LCC,     SIDE_UNDEFINED, 1},
+          {SES_SUBENCL_TYPE_LCC,     SIDE_UNDEFINED, 1},
+       };
+
+       args[0].side = spid;
+       args[1].side = 1-spid;
+
+
+       for ( j = 0; j < sizeof(args) /  sizeof(args[0]); ++j)
+       {
+           status = config_page_get_start_elem_index_in_stat_page(s,
+                                                                   args[j].subencl_type,
+                                                                   args[j].side,
+                                                                   SES_ELEM_TYPE_ESC_ELEC,
+                                                                   TRUE,
+                                                                   args[j].num_possible_elems,
+                                                                   FALSE,
+                                                                   NULL,
+                                                                   &elem_index);
+           if (status == FBE_STATUS_OK)
+           {
+               element_count += 1;
+               temp_info_p->elem_index = elem_index;
+               temp_info_p->fru = 1;
+               temp_info_p->drive_ecb_fault = 0;
+               temp_info_p->sxp_eeprom_valid_rslt = 0;
+               temp_info_p->primary_cdef_fault = 0;
+               temp_info_p->secondary_cdef_fault = 0;
+               temp_info_p->twi_fault = 0;
+               temp_info_p += 1;
+               continue;
+           }
+           if (status != FBE_STATUS_COMPONENT_NOT_FOUND)
+           {
+               return status;
+           }
+       }
+    }
+    *num_general_info_elem = element_count;
+    *general_info_elem_end_ptr = (uint8_t*)temp_info_p;
+    return status;
 }
 
 fbe_status_t emc_encl_stat_diag_page_build_general_info_expander_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *general_info_elem_start_ptr, uint8_t **general_info_elem_end_ptr, uint8_t *num_general_info_elem)

@@ -638,7 +638,7 @@ typedef struct FileHeader
  * return copied length. if return -1, means does not found the page and nothing copied.
  */
 static int page_load(SCSIDiskState *s, int page, int sub_page, uint8_t **p_outbuf,
-                                int page_type, int *available_space)
+                                int page_type)
 {
 
     int length = -1;
@@ -654,13 +654,9 @@ static int page_load(SCSIDiskState *s, int page, int sub_page, uint8_t **p_outbu
     // Go through page indices for page data
     for (i = 0; i< p_pg_header->number; i++){
         if (page == index->page_code && sub_page == index->sub_page_code) {
-            // check available outbuf size for safety.
             length = index->length;
-            if (length > *available_space) {
-                length = *available_space;
-            }
+
             memcpy(*p_outbuf, (uint8_t*)p_pg_header + index->offset, length);
-            *available_space -= length;
             *p_outbuf += length;
             break;
         }
@@ -725,7 +721,7 @@ static char *replace_underline(char *src, char *dst)
 static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
 {
     SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, req->dev);
-    SCSIDiskReq *r = DO_UPCAST(SCSIDiskReq, req, req);
+    //SCSIDiskReq *r = DO_UPCAST(SCSIDiskReq, req, req);
 
     int buflen = 0;
     int start;
@@ -1013,9 +1009,9 @@ static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
         {
             if (s->page_buffer) {
                 // try load page data from bin file.
-                int available_space = r->buflen;
+                //int available_space = r->buflen;
                 uint8_t tmp = outbuf[0];
-                buflen = page_load(s, page_code, 0, &outbuf, INQUIRY_PAGE, &available_space);
+                buflen = page_load(s, page_code, 0, &outbuf, INQUIRY_PAGE);
                 outbuf[0] = tmp;
                 if (buflen > 0) break;
             }
@@ -1041,9 +1037,9 @@ static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
 
     if (s->page_buffer) {
         // fill buffer with standard page data in bin file first.
-        int available_space = buflen;
+        //int available_space = buflen;
         uint8_t * pbuf = outbuf;
-        page_load(s, 0xff, 0xff, &pbuf, INQUIRY_PAGE, &available_space);
+        page_load(s, 0xff, 0xff, &pbuf, INQUIRY_PAGE);
     }
 
     outbuf[0] = s->qdev.type & 0x1f;
@@ -1512,12 +1508,58 @@ static int mode_sense_page(SCSIDiskState *s, int page, uint8_t **p_outbuf,
     return length + 2;
 }
 
+static int mode_sense_pages_all(SCSIDiskState *s, int page, int sub_page, uint8_t **p, int page_control)
+{
+    int ret = 0;
+
+    if (s->page_buffer) {
+        //int available_space = r->buflen;
+        // a flag indicates it requires non runtime information.
+#define is_addtional_page(page) ((page != 0x01 && page!= 0x04 && page != 0x05 && page != 0x08))
+
+        if (page == 0x3f || sub_page == 0xff) {
+            // setup the start page and end page of loop.
+            int page_start = 0, page_end = 0x3e;
+            int subpage_start = 0, subpage_end = 0xfe;
+
+            if (page != 0x3f) page_start = page_end = page;
+            if (sub_page != 0xff) subpage_start = subpage_end = sub_page;
+
+            for (page = page_start; page <= page_end; page++) {
+                if (is_addtional_page(page)) {
+                    for (sub_page = subpage_start; sub_page <= subpage_end; sub_page++) {
+                        page_load(s, page, sub_page, p, MODE_PAGE);
+                    }
+                } else {
+                    ret = mode_sense_page(s, page, p, page_control);
+                }
+            }
+
+        } else {
+            if (is_addtional_page(page))
+                ret = page_load(s, page, sub_page, p, MODE_PAGE);
+            else
+                ret = mode_sense_page(s, page, p, page_control);
+        }
+    } else {
+        if (page == 0x3f) {
+            for (page = 0; page <= 0x3e; page++) {
+                mode_sense_page(s, page, p, page_control);
+            }
+        } else {
+            ret = mode_sense_page(s, page, p, page_control);
+        }
+    }
+
+    return ret;
+}
+
 static int scsi_disk_emulate_mode_sense(SCSIDiskReq *r, uint8_t *outbuf)
 {
     SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, r->req.dev);
     uint64_t nb_sectors;
     bool dbd;
-    int page, buflen, ret, page_control, sub_page;
+    int page, buflen, page_control, sub_page;
     uint8_t *p;
     uint8_t dev_specific_param;
 
@@ -1586,55 +1628,11 @@ static int scsi_disk_emulate_mode_sense(SCSIDiskReq *r, uint8_t *outbuf)
      * If page_buffer is available, get page content from page_buffer
      *
      * */
-    if (s->page_buffer) {
-        int available_space = r->buflen;
-        // a flag indicates it requires non runtime information.
-#define is_addtional_page(page) ((page != 0x01 && page!= 0x04 && page != 0x05 && page != 0x08))
 
-        if (page == 0x3f || sub_page == 0xff) {
-            // setup the start page and end page of loop.
-            int page_start = 0, page_end = 0x3e;
-            int subpage_start = 0, subpage_end = 0xfe;
-            if (page != 0x3f) page_start = page_end = page;
-            if (sub_page != 0xff) subpage_start = subpage_end = sub_page;
-
-            for (page = page_start; page <= page_end; page++) {
-                if (is_addtional_page(page)) {
-                    for (sub_page = subpage_start; sub_page <= subpage_end; sub_page++) {
-                         page_load(s, page, sub_page, &p, MODE_PAGE, &available_space);
-                    }
-                }
-                else {
-                    mode_sense_page(s, page, &p, page_control);
-                }
-            }
-
-        } else
-        {
-            if (is_addtional_page(page))
-                ret = page_load(s, page, sub_page, &p, MODE_PAGE, &available_space);
-            else
-                ret = mode_sense_page(s, page, &p, page_control);
-            if (ret == -1) {
-                return -1;
-            }
-        }
-    } else
-    {
-        if (page == 0x3f) {
-            for (page = 0; page <= 0x3e; page++) {
-                mode_sense_page(s, page, &p, page_control);
-            }
-        } else {
-            ret = mode_sense_page(s, page, &p, page_control);
-            if (ret == -1) {
-                return -1;
-            }
-        }
+    if (mode_sense_pages_all(s, page, sub_page, &p, page_control) < 0) {
+        scsi_check_condition(r, SENSE_CODE(INVALID_PARAM));
+        return -1;
     }
-
-
-
 
     buflen = p - outbuf;
     /*
@@ -1822,39 +1820,47 @@ static void scsi_disk_emulate_read_data(SCSIRequest *req)
     scsi_req_complete(&r->req, GOOD);
 }
 
-static int scsi_disk_check_mode_select(SCSIDiskState *s, int page,
+static int scsi_disk_check_mode_select(SCSIDiskState *s, int page, int subpage,
                                        uint8_t *inbuf, int inlen)
 {
     uint8_t mode_current[SCSI_MAX_MODE_LEN];
     uint8_t mode_changeable[SCSI_MAX_MODE_LEN];
     uint8_t *p;
-    int len, expected_len, changeable_len, i;
+    int len, expected_len, /*changeable_len,*/ i;
+    int header_len;
 
     /* The input buffer does not include the page header, so it is
      * off by 2 bytes.
      */
-    expected_len = inlen + 2;
+    if (subpage)
+        header_len = 4;
+    else
+        header_len = 2;
+
+    expected_len = inlen + header_len;
+
     if (expected_len > SCSI_MAX_MODE_LEN) {
         return -1;
     }
 
     p = mode_current;
-    memset(mode_current, 0, inlen + 2);
-    len = mode_sense_page(s, page, &p, 0);
+    memset(mode_current, 0, inlen + header_len);
+    len = mode_sense_pages_all(s, page, subpage, &p, 0);
     if (len < 0 || len != expected_len) {
         return -1;
     }
 
     p = mode_changeable;
-    memset(mode_changeable, 0, inlen + 2);
-    changeable_len = mode_sense_page(s, page, &p, 1);
-    assert(changeable_len == len);
+    memset(mode_changeable, 0xff, inlen + header_len);
+    // For now, make all pages changeable 
+    //changeable_len = mode_sense_pages_all(s, page, subpage, &p, 1);
+    //assert(changeable_len == len);
 
     /* Check that unchangeable bits are the same as what MODE SENSE
      * would return.
      */
-    for (i = 2; i < len; i++) {
-        if (((mode_current[i] ^ inbuf[i - 2]) & ~mode_changeable[i]) != 0) {
+    for (i = header_len; i < len; i++) {
+        if (((mode_current[i] ^ inbuf[i - header_len]) & ~mode_changeable[i]) != 0) {
             return -1;
         }
     }
@@ -1899,16 +1905,18 @@ static int mode_select_pages(SCSIDiskReq *r, uint8_t *p, int len, bool change)
             p += 2;
             len -= 2;
         }
-
+        // Don't fail on subpage.
+        #if 0
         if (subpage) {
             goto invalid_param;
         }
+        #endif
         if (page_len > len) {
             goto invalid_param_len;
         }
 
         if (!change) {
-            if (scsi_disk_check_mode_select(s, page, p, page_len) < 0) {
+            if (scsi_disk_check_mode_select(s, page, subpage, p, page_len) < 0) {
                 goto invalid_param;
             }
         } else {

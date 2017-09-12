@@ -4968,10 +4968,11 @@ fbe_status_t emc_statistics_stat_page_build_cooling_stats(terminator_sas_virtual
     fbe_eses_cooling_stats_t    *elem_ptr;
 
     fbe_u8_t                     elem_len;
+    elem_ptr = (fbe_eses_cooling_stats_t*) device_slot_stats_start_ptr;
+
     if (info->enclosure_type == FBE_SAS_ENCLOSURE_TYPE_TABASCO)
     {
         elem_len = sizeof(fbe_eses_cooling_stats_t) - sizeof(ses_common_statistics_field_t);
-        elem_ptr = (fbe_eses_cooling_stats_t*) device_slot_stats_start_ptr;
         status =  fbe_terminator_api_get_sp_id(info, &spid);
         //Build PS A cooling elements
         status = config_page_get_start_elem_offset_in_stat_page(info,

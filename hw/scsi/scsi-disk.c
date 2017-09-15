@@ -42,6 +42,7 @@ do { printf("scsi-disk: " fmt , ## __VA_ARGS__); } while (0)
 #include "trace.h"
 #include "qemu/timer.h"
 #include "hw/loader.h"
+#include "eses.h"
 
 #ifdef __linux
 #include <scsi/sg.h>
@@ -1080,6 +1081,458 @@ static int scsi_disk_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
     return buflen;
 }
 
+#pragma pack(push)
+#pragma pack(2)
+
+typedef struct log_page_header
+{
+    uint8_t page_code:      6;
+    uint8_t spf:            1;
+    uint8_t ds:             1;
+    uint8_t subpage_code;
+    uint16_t len;
+}log_page_header_t;
+
+typedef struct log_rsp_param_header
+{
+    uint16_t param_code;
+    uint8_t format_linking: 2;
+    uint8_t tmc:            1;
+    uint8_t etc:            1;
+    uint8_t tsd:            1;
+    uint8_t obsolete:       1;
+    uint8_t du:             1;
+    uint8_t param_length;
+}log_rsp_param_header_t;
+
+
+#pragma pack(pop)
+
+static uint8_t* fill_log_page_header(uint8_t* ptr, uint8_t pagecode, uint8_t subpage_code,
+                                     uint16_t page_len, uint8_t ds)
+{
+    uint8_t spf = 0;
+    if (subpage_code != 0) spf = 1;
+    *ptr++ = (spf << 6) | (ds << 7) | pagecode;
+    *ptr++ = subpage_code;
+    *ptr++ = (uint8_t)(page_len >> 8);
+    *ptr++ = (uint8_t)(page_len);
+    return ptr;
+}
+
+static inline int fill_log_parameter_header(uint8_t* *ptr, uint16_t parameter_point, uint16_t parameter_code, uint8_t du,
+                                     uint8_t tsd, uint8_t etc, uint8_t tmc, uint8_t fmt_lnk, uint8_t len)
+{
+    if (parameter_point <= parameter_code)
+    {
+        uint8_t* p = *ptr;
+
+        *p++ = (uint8_t)(parameter_code >> 8);
+        *p++ = (uint8_t)(parameter_code);
+        *p++ = (du << 7) | (tsd << 5) | (etc << 4) | (tmc << 2) | (fmt_lnk);
+        *p++ = len;
+
+        *ptr = p;
+
+        return 0;
+    }
+    return -1;
+}
+
+static inline uint8_t* fill_log_parameter_protocol_specific_port_log_header(uint8_t* ptr, uint8_t protocol_id,
+                                                              uint8_t generation_code, uint8_t number_of_phy)
+{
+    *ptr++ = protocol_id & 0xf;
+    *ptr++ = 0; // reserved.
+    *ptr++ = generation_code;
+    *ptr++ = number_of_phy;
+    return ptr;
+}
+
+#define PROTOCOL_STANDARD_SPL 0x06
+
+#pragma pack(push)
+#pragma pack(4)
+// refer to SAS2r16.pdf, Chapter 10.2.8 SCSI log parameters
+typedef struct sas_phy_log_descriptor
+{
+    uint8_t rsv0;
+    uint8_t phy_id;
+    uint8_t rsv1;
+    uint8_t sas_phy_log_desc_len;
+    uint8_t atta_reason:4;
+    uint8_t attached_device_type:3;
+    uint8_t rsv2:1;
+
+    uint8_t negotiated_logic_link_rate:4;
+    uint8_t reason:4;
+
+    uint8_t rsv3:1;
+    uint8_t atta_smp_i_port: 1;
+    uint8_t atta_stp_i_port: 1;
+    uint8_t atta_ssp_i_port: 1;
+    uint8_t rsv4:4;
+
+    uint8_t rsv5:1;
+    uint8_t atta_smp_t_port:1;
+    uint8_t atta_stp_t_port:1;
+    uint8_t atta_ssp_t_port:1;
+    uint8_t rsv6:4;
+
+    uint64_t sas_addr;          // byte 8~15
+    uint64_t attached_sas_addr; // byte 16~23
+    uint8_t attached_phy_id;    // byte 24
+    uint8_t rsv7[7];            // byte 25~31
+
+    uint32_t invalid_dword_count;   // 32~35
+    uint32_t running_disparity_error_count;  // 36~39
+    uint32_t loss_dword_synchronization;  // 40~43
+    uint32_t phy_reset_problem;   // 44~47
+    uint16_t resv8;   //48~49
+
+    uint8_t phy_event_descriptor_len;  // 50
+    uint8_t number_phy_event_descriptors; // 51
+
+}sas_phy_log_descriptor_t;
+#pragma pack (pop)
+
+typedef struct phy_event_descriptor
+{
+    uint16_t reserved0;
+    uint8_t  reserved1;
+    uint8_t  phy_event_source;
+    uint32_t phy_event;
+    uint32_t peak_value_detector_threshold;
+}phy_event_descriptor_t;
+
+/**
+ * get attached SAS address and Phy-Id of peer port (expander side)
+ * return -1: not find.
+ */
+static int get_attached_sas_info(SCSIRequest *req, uint32_t scsi_id, uint64_t* wwn, uint8_t* phy_id)
+{
+    SCSIDevice *d = (SCSIDevice *)req->dev;
+    SCSIBus *bus = scsi_bus_from_device(d);
+    uint8_t side;
+    BusChild *kid;
+    // calculate exp_id and phy_id
+    side = scsi_id / 29;
+    *phy_id = (scsi_id % 29) + 8;
+
+    // search SCSI tree to find expander
+    QTAILQ_FOREACH_REVERSE(kid, &bus->qbus.children, ChildrenHead, sibling){
+        DeviceState *qdev = kid->child;
+        SCSIDevice *dev = SCSI_DEVICE(qdev);
+
+        if (dev->type == TYPE_ENCLOSURE && ((SCSISESState *)dev)->side == side)
+        {
+            *wwn = ((SCSISESState *)dev)->qdev.wwn;
+            return 0;
+        }
+    }
+    *wwn = 0;
+    *phy_id = 0;
+    return -1;
+}
+/***
+ * get the scsi-id and wwn of another port of current drive.
+ * return -1: not find. (the other port is not connected)
+ */
+static int get_drive_peer_wwn_scsi_id(SCSIRequest *req, uint64_t*wwn, uint32_t* scsi_id)
+{
+    SCSIDevice *d = (SCSIDevice *)req->dev;
+    SCSIBus *bus = scsi_bus_from_device(d);
+    uint64_t local_wwn = 0;
+    uint64_t port_wwn = 0;
+    BusChild *kid;
+    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, req->dev);
+
+    local_wwn = s->qdev.wwn;
+    port_wwn = s->qdev.port_wwn;
+    *wwn = 0;
+    *scsi_id = -1u;
+    // search SCSI tree to find drive which has same wwn with different port_wwn
+    QTAILQ_FOREACH_REVERSE(kid, &bus->qbus.children, ChildrenHead, sibling){
+        DeviceState *qdev = kid->child;
+        SCSIDevice *dev = SCSI_DEVICE(qdev);
+
+        if (dev->type == TYPE_DISK)
+        {
+            s = (SCSIDiskState *)qdev;
+            if (s->qdev.wwn == local_wwn && s->qdev.port_wwn != port_wwn)
+            {
+                *scsi_id = dev->id;
+                *wwn = s->qdev.port_wwn;
+                return 0;
+            }
+        }
+    }
+    return -1;
+}
+static int scsi_disk_emulate_log_sense(SCSIRequest *req, uint8_t *outbuf)
+{
+    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, req->dev);
+    //SCSIDiskReq *r = DO_UPCAST(SCSIDiskReq, req, req);
+
+    int buflen = 0;
+    uint8_t* ptr = outbuf + 4;
+    //int start;
+    // parse cdb header.
+    uint8_t page_code = req->cmd.buf[2] & 0x3f;
+    uint8_t subpage_code = req->cmd.buf[3];
+    uint16_t parameter_pointer = (req->cmd.buf[5] << 8) + req->cmd.buf[6];
+    uint16_t allocation_len = (req->cmd.buf[7] << 8) + req->cmd.buf[8];
+    //uint8_t control = req->cmd.buf[9];
+    //uint8_t sp = req->cmd.buf[1] & 0x1;
+    //uint16_t page_len;
+
+#define FILL_UL(p,a,b,c,d)  *((uint32_t*)p) = (d << 24) | (c << 16) | (b << 8) | a; p+=4
+
+    buflen = allocation_len;
+
+    switch (page_code)
+    {
+        case 0: // page 0, a page code list.
+            if (subpage_code == 0x0)
+            {
+                *ptr++ = 0;
+                *ptr++ = 0x11;   // Specific device.
+                *ptr++ = 0x18;   // Protocol Specific port
+                *ptr++ = 0x2f;   // Information Exceptions.
+                break;
+            }
+            if (subpage_code == 0xff)
+            {
+                FILL_UL(ptr,    0, 0,    0,    0);
+                FILL_UL(ptr, 0x11, 0, 0x11, 0xff);
+                FILL_UL(ptr, 0x18, 0, 0x18, 0xff);
+                FILL_UL(ptr, 0x2f, 0, 0x2f, 0xff);
+                break;
+            }
+            buflen = -1;
+            break;
+        case 0x11:
+            if (subpage_code == 0)
+            {
+                if (fill_log_parameter_header(&ptr, parameter_pointer, 1, 0,0,0,0,3,4) != 0)
+                    break;
+                FILL_UL(ptr, 0,0,0,0);
+                break;
+            }
+            if (subpage_code == 0xff)
+            {
+                FILL_UL(ptr, 0x11, 0, 0x11, 0xff);
+                break;
+            }
+            buflen = -1;
+            break;
+        case 0x18:
+            if (subpage_code == 0)
+            {
+                uint64_t wwn;
+                uint32_t scsi_id;
+                uint8_t  phy_id;
+                sas_phy_log_descriptor_t* header = NULL;
+                phy_event_descriptor_t*   ptr_event_descriptor = NULL;
+                if (fill_log_parameter_header(&ptr, parameter_pointer, 1, 0, 0, 0, 0, 3, 0x68) == 0)
+                {
+                    ptr = fill_log_parameter_protocol_specific_port_log_header(ptr, PROTOCOL_STANDARD_SPL, 0xa, 1);
+                    header = (sas_phy_log_descriptor_t*) ptr;
+                    header->phy_id = 0;
+                    header->sas_phy_log_desc_len = 0x60;
+                    header->attached_device_type = 0x2;
+                    header->atta_reason = 0;
+                    header->negotiated_logic_link_rate = 0xb;
+                    header->reason = 0;
+                    header->atta_smp_i_port = 1;
+                    header->atta_stp_i_port = 0;
+                    header->atta_ssp_i_port = 0;
+
+                    header->atta_smp_t_port = 1;
+                    header->atta_stp_t_port = 0;
+                    header->atta_ssp_t_port = 0;
+
+                    header->sas_addr = bswap64(s->qdev.port_wwn);
+                    get_attached_sas_info(req, s->qdev.id, &wwn, &phy_id);
+                    header->attached_sas_addr = bswap64(wwn);
+                    header->attached_phy_id = phy_id;
+                    header->invalid_dword_count = bswap32(12);
+                    header->running_disparity_error_count = bswap32(12);
+                    header->loss_dword_synchronization = bswap32(27);
+                    header->phy_reset_problem = bswap32(0);
+                    header->phy_event_descriptor_len = 12;
+                    header->number_phy_event_descriptors = 4;
+                    // fill with fake events.
+                    ptr_event_descriptor = (phy_event_descriptor_t*) (header + 1);
+                    ptr_event_descriptor->phy_event_source = 1;
+                    ptr_event_descriptor->phy_event = bswap32(0xc);
+                    ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
+                    ptr_event_descriptor ++;
+                    ptr_event_descriptor->phy_event_source = 2;
+                    ptr_event_descriptor->phy_event = bswap32(0xc);
+                    ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
+                    ptr_event_descriptor ++;
+
+                    ptr_event_descriptor->phy_event_source = 3;
+                    ptr_event_descriptor->phy_event = bswap32(0x1b);
+                    ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
+                    ptr_event_descriptor ++;
+                    ptr_event_descriptor->phy_event_source = 4;
+                    ptr_event_descriptor->phy_event = bswap32(0x0);
+                    ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
+                    ptr_event_descriptor ++;
+
+                    ptr = (uint8_t*) ptr_event_descriptor;
+                }
+
+                if (0 != get_drive_peer_wwn_scsi_id(req, &wwn, &scsi_id))
+                {
+                    // break if it can't find information of another port.
+                    break;
+                }
+                if (fill_log_parameter_header(&ptr, parameter_pointer, 2, 0, 0, 0, 0, 3,
+                        sizeof(sas_phy_log_descriptor_t) + 4 * sizeof(phy_event_descriptor_t) + 8 - 4) == 0)  //0x68
+                {
+                    ptr = fill_log_parameter_protocol_specific_port_log_header(ptr, PROTOCOL_STANDARD_SPL, 0xa, 1);
+
+                    header = (sas_phy_log_descriptor_t*) ptr;
+                    header->phy_id = 1;
+                    header->sas_phy_log_desc_len = sizeof(sas_phy_log_descriptor_t) + 4 * sizeof(phy_event_descriptor_t) - 4; //0x60;
+                    header->attached_device_type = 0x2;
+                    header->atta_reason = 0;
+                    header->negotiated_logic_link_rate = 0xb;
+                    header->reason = 0;
+                    header->atta_smp_i_port = 1;
+                    header->atta_stp_i_port = 0;
+                    header->atta_ssp_i_port = 0;
+
+                    header->atta_smp_t_port = 1;
+                    header->atta_stp_t_port = 0;
+                    header->atta_ssp_t_port = 0;
+
+
+                    header->sas_addr = bswap64(wwn);
+                    get_attached_sas_info(req, scsi_id, &wwn, &phy_id);
+                    header->attached_sas_addr = bswap64(wwn);
+                    header->attached_phy_id = phy_id;
+                    header->invalid_dword_count = bswap32(8);
+                    header->running_disparity_error_count = bswap32(8);
+                    header->loss_dword_synchronization = bswap32(8);
+                    header->phy_reset_problem = bswap32(0);
+                    header->phy_event_descriptor_len = 12;
+                    header->number_phy_event_descriptors = 4;
+                    // fill with fake events.
+                    ptr_event_descriptor = (phy_event_descriptor_t*) (header + 1);
+                    ptr_event_descriptor->phy_event_source = 1;
+                    ptr_event_descriptor->phy_event = bswap32(8);
+                    ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
+                    ptr_event_descriptor ++;
+                    ptr_event_descriptor->phy_event_source = 2;
+                    ptr_event_descriptor->phy_event = bswap32(8);
+                    ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
+                    ptr_event_descriptor ++;
+
+                    ptr_event_descriptor->phy_event_source = 3;
+                    ptr_event_descriptor->phy_event = bswap32(8);
+                    ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
+                    ptr_event_descriptor ++;
+                    ptr_event_descriptor->phy_event_source = 4;
+                    ptr_event_descriptor->phy_event = bswap32(0x0);
+                    ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
+                    ptr_event_descriptor ++;
+
+                    ptr = (uint8_t*) ptr_event_descriptor;
+                }
+                if (parameter_pointer > 2)
+                    buflen = -1;
+                break;
+            }
+            if (subpage_code == 0xff)
+            {
+                FILL_UL(ptr, 0x18, 0, 0x18, 0xff);
+                break;
+            }
+            buflen = -1;
+            break;
+        case 0x2f:
+            if (subpage_code == 0)
+            {
+                // fill ADDITIONAL SENSE CODE, ADDITIONAL SENSE CODE QUALIFIER, MOST RECENT TEMPERATURE READING, Vendor specific 0
+#define FILL_EXECPTION_HEADER(p, sense_code, qualifier, temperature, vendor_specific) \
+               *p++ = sense_code; *p++ = qualifier; *p++ = temperature; *p++ = vendor_specific;
+
+                if (fill_log_parameter_header(&ptr, parameter_pointer, 0, 0, 0, 0, 0, 3, 8) == 0)
+                {
+                    FILL_EXECPTION_HEADER(ptr, 0, 0, 0x1f, 0x46);
+                    FILL_UL(ptr, 0x25, 0, 0, 0);
+                }
+
+                if (fill_log_parameter_header(&ptr, parameter_pointer, 1, 0, 0, 0, 0, 3, 4) == 0)
+                {
+                    FILL_EXECPTION_HEADER(ptr, 0x5d, 0x53, 0, 0);
+                }
+
+                if (fill_log_parameter_header(&ptr, parameter_pointer, 2, 0, 0, 0, 0, 3, 4) == 0)
+                {
+                    FILL_EXECPTION_HEADER(ptr, 0x5d, 0x54, 0, 0);
+                }
+
+                if (fill_log_parameter_header(&ptr, parameter_pointer, 3, 0, 0, 0, 0, 3, 4) == 0)
+                {
+                    FILL_EXECPTION_HEADER(ptr, 0x5d, 0x57, 0, 0);
+                }
+
+                if (fill_log_parameter_header(&ptr, parameter_pointer, 4, 0, 0, 0, 0, 3, 4) == 0)
+                {
+                    FILL_EXECPTION_HEADER(ptr, 0x5d, 0x28, 0, 0);
+                }
+
+                if (fill_log_parameter_header(&ptr, parameter_pointer, 5, 0, 0, 0, 0, 3, 4) == 0)
+                {
+                    FILL_EXECPTION_HEADER(ptr, 0x0b, 0x06, 0, 0);
+                }
+
+                if (fill_log_parameter_header(&ptr, parameter_pointer, 6, 0, 0, 0, 0, 3, 4) == 0)
+                {
+                    FILL_EXECPTION_HEADER(ptr, 0x5d, 0x56, 0x3, 0);
+                }
+
+                if (fill_log_parameter_header(&ptr, parameter_pointer, 7, 0, 0, 0, 0, 3, 4) == 0)
+                {
+                    FILL_EXECPTION_HEADER(ptr, 0x5d, 0x55, 0, 0);
+                }
+
+                if (fill_log_parameter_header(&ptr, parameter_pointer, 8, 0, 0, 0, 0, 3, 4) == 0)
+                {
+                    FILL_EXECPTION_HEADER(ptr, 0x5d, 0x20, 0, 0);
+                }
+#undef FILL_EXECPTION_HEADER
+                if (parameter_pointer > 9)
+                    buflen = -1;
+                break;
+            }
+            if (subpage_code == 0xff)
+            {
+                FILL_UL(ptr, 0x2f, 0, 0x2f, 0xff);
+                break;
+            }
+            buflen = -1;
+            break;
+        default:
+            buflen = -1;
+            break;
+    }
+
+    fill_log_page_header(outbuf, page_code, subpage_code, ptr-outbuf-4, 0);
+    return buflen;
+}
+
+/*
+static int scsi_disk_emulate_log_select(SCSIRequest *req, uint8_t *outbuf)
+{
+    return -1;
+}
+*/
 static inline bool media_is_dvd(SCSIDiskState *s)
 {
     uint64_t nb_sectors;
@@ -2299,6 +2752,7 @@ static int32_t scsi_disk_emulate_command(SCSIRequest *req, uint8_t *buf)
     case MECHANISM_STATUS:
     case REQUEST_SENSE:
     case FORMAT_UNIT:
+    case LOG_SENSE:
         break;
     default:
         if (!blk_is_available(s->qdev.conf.blk)) {
@@ -2375,6 +2829,18 @@ static int32_t scsi_disk_emulate_command(SCSIRequest *req, uint8_t *buf)
             goto illegal_request;
         }
         break;
+    case LOG_SENSE:
+        buflen = scsi_disk_emulate_log_sense(req, outbuf);
+        if (buflen < 0) {
+            goto illegal_request;
+        }
+        break;
+//    case LOG_SELECT:
+//        buflen = scsi_disk_emulate_log_select(req, outbuf);
+//        if (buflen < 0) {
+//            goto illegal_request;
+//        }
+//        break;
     case RESERVE:
         if (req->cmd.buf[1] & 1) {
             goto illegal_request;
@@ -2962,6 +3428,7 @@ static const SCSIReqOps *const scsi_disk_reqops_dispatch[256] = {
     [FORMAT_UNIT]                     = &scsi_disk_emulate_reqops,
     [RECEIVE_DIAGNOSTIC]              = &scsi_disk_emulate_reqops,
     [SEND_DIAGNOSTIC]                 = &scsi_disk_emulate_reqops,
+    [LOG_SENSE]                       = &scsi_disk_emulate_reqops,
     [READ_6]                          = &scsi_disk_dma_reqops,
     [READ_10]                         = &scsi_disk_dma_reqops,
     [READ_12]                         = &scsi_disk_dma_reqops,

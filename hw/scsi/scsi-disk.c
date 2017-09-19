@@ -1334,6 +1334,11 @@ static int scsi_disk_emulate_log_sense(SCSIRequest *req, uint8_t *outbuf)
                 uint8_t  phy_id;
                 sas_phy_log_descriptor_t* header = NULL;
                 phy_event_descriptor_t*   ptr_event_descriptor = NULL;
+                if (parameter_pointer > 2)
+                {
+                    buflen = -1;
+                    break;
+                }
                 if (fill_log_parameter_header(&ptr, parameter_pointer, 1, 0, 0, 0, 0, 3, 0x68) == 0)
                 {
                     ptr = fill_log_parameter_protocol_specific_port_log_header(ptr, PROTOCOL_STANDARD_SPL, 0xa, 1);
@@ -1388,6 +1393,7 @@ static int scsi_disk_emulate_log_sense(SCSIRequest *req, uint8_t *outbuf)
                 if (0 != get_drive_peer_wwn_scsi_id(req, &wwn, &scsi_id))
                 {
                     // break if it can't find information of another port.
+                    if (parameter_pointer >= 2) buflen = -1;
                     break;
                 }
                 if (fill_log_parameter_header(&ptr, parameter_pointer, 2, 0, 0, 0, 0, 3,
@@ -1443,8 +1449,6 @@ static int scsi_disk_emulate_log_sense(SCSIRequest *req, uint8_t *outbuf)
 
                     ptr = (uint8_t*) ptr_event_descriptor;
                 }
-                if (parameter_pointer > 2)
-                    buflen = -1;
                 break;
             }
             if (subpage_code == 0xff)

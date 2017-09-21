@@ -6539,3 +6539,48 @@
 # Since 2.9
 ##
 { 'command': 'query-vm-generation-id', 'returns': 'GuidInfo' }
+# @DriveDefect:
+#
+# The struct describes drive defects. Which is currently in CHS system.
+#
+# @cylinder: Cylinder.
+#
+# @head: Head.
+#
+# @sector: Sector, which could be replaced by Offset in the near future.
+##
+
+{ 'struct': 'DriveDefect',
+  'data': { 'cylinder': 'int',
+            'head': 'int',
+            'sector': 'int' } }
+
+##
+# @set-drive-defect:
+#
+# This command is to inject drive defects into plist and glist, which
+# is now described in the struct 'DriveDefect'. The device class must
+# implements the interface of 'TYPE_DRIVE_DEFECT_HANDLER'.
+#
+# @id: device id which is assigned in qemu options for this device.
+#
+# @type: "glist" or "plist"
+#
+# @defect-count: defects count to inject.
+##
+{ 'command': 'set-drive-defect', 'data': { 'id': 'str', 'type': 'str', 'defect-count': 'int' } }
+
+##
+# @get-drive-defect:
+#
+# This command is to get drive defects from glist or plist, which is
+# now described in the struct 'DriveDefect'. The device class must
+# implements the interface of 'TYPE_DRIVE_DEFECT_HANDLER'.
+#
+# @id: device id which is assigned in qemu options for this device.
+#
+# @type: "glist" or "plist"
+#
+# Returns: a list of DriveDefect objects.
+##
+{ 'command': 'get-drive-defect', 'data': { 'id': 'str', 'type': 'str'}, 'returns': [ 'DriveDefect' ] }

@@ -1,4 +1,4 @@
-/*
+                                                /*
  *  Dynamic device configuration and creation.
  *
  *  Copyright (c) 2009 CodeSourcery
@@ -30,6 +30,7 @@
 #include "qemu/help_option.h"
 #include "sysemu/block-backend.h"
 #include "migration/misc.h"
+#include "block/drive-defect.h"
 
 /*
  * Aliases were a bad idea from the start.  Let's keep them
@@ -965,4 +966,66 @@ int qemu_global_option(const char *str)
     }
 
     return 0;
+}
+
+static Object *qdev_get_object_by_id(const char *id);
+
+static Object *qdev_get_object_by_id(const char *id)
+{
+    Object *obj;
+
+    if (id[0] == '/') {
+        obj = object_resolve_path(id, NULL);
+    } else {
+        char *root_path = object_get_canonical_path(container_get(qdev_get_machine(), "/peripheral"));
+        char *path = g_strdup_printf("%s/%s", root_path, id);
+
+        g_free(root_path);
+        obj = object_resolve_path_type(path, TYPE_DEVICE, NULL);
+        g_free(path);
+    }
+
+    return obj;
+}
+
+void qmp_set_drive_defect(const char *id, const char *type, int64_t defect_count, Error **errp)
+{
+
+    Object *obj = qdev_get_object_by_id(id);
+    if (!obj) {
+        error_set(errp, ERROR_CLASS_DEVICE_NOT_FOUND,
+                  "Device '%s' not found", id);
+        return;
+    }
+
+    DriveDefectHandlerClass *ddhc = DRIVE_DEFECT_HANDLER_GET_CLASS(obj);
+    if (ddhc) {
+        if (ddhc->set_drive_defect) {
+            ddhc->set_drive_defect(DEVICE(obj), type, (int)(defect_count&0xffffffff), errp);
+            return;
+        }
+    }
+
+    error_setg(errp, "%s is a %s device, don't support drive defect operation", id, object_get_typename(obj));
+    return;
+}
+
+DriveDefectList *qmp_get_drive_defect(const char *id, const char *type, Error **errp)
+{
+    Object *obj = qdev_get_object_by_id(id);
+    if (!obj) {
+        error_set(errp, ERROR_CLASS_DEVICE_NOT_FOUND,
+                  "Device '%s' not found", id);
+        return NULL;
+    }
+
+    DriveDefectHandlerClass *ddhc = DRIVE_DEFECT_HANDLER_GET_CLASS(obj);
+    if (ddhc) {
+        if (ddhc->get_drive_defect) {
+            return ddhc->get_drive_defect(DEVICE(obj), type, errp);
+        }
+    }
+
+    error_setg(errp, "%s is a %s device, don't support drive defect operation", id, object_get_typename(obj));
+    return NULL;
 }

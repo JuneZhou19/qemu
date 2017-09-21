@@ -33,6 +33,7 @@ do { printf("scsi-disk: " fmt , ## __VA_ARGS__); } while (0)
 #include "qemu/error-report.h"
 #include "hw/scsi/scsi.h"
 #include "block/scsi.h"
+#include "block/drive-defect.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/block-backend.h"
 #include "sysemu/blockdev.h"
@@ -43,6 +44,7 @@ do { printf("scsi-disk: " fmt , ## __VA_ARGS__); } while (0)
 #include "qemu/timer.h"
 #include "hw/loader.h"
 #include "eses.h"
+#include "qmp-commands.h"
 
 #ifdef __linux
 #include <scsi/sg.h>
@@ -120,9 +122,12 @@ typedef struct SCSIDiskState
     bool format_in_progress;
     char *page_file;
     uint8_t* page_buffer;
+    struct DriveDefectDescriptor drive_defect_desc;
 } SCSIDiskState;
 
 static int scsi_handle_rw_error(SCSIDiskReq *r, int error, bool acct_failed);
+static void scsi_hd_set_drive_defect(DeviceState *dev, const char *type, int defect_count, Error **errp);
+static DriveDefectList *scsi_hd_get_drive_defect(DeviceState *dev, const char *type, Error **errp);
 
 static void scsi_free_request(SCSIRequest *req)
 {
@@ -3875,6 +3880,86 @@ static Property scsi_hd_properties[] = {
     DEFINE_PROP_END_OF_LIST(),
 };
 
+static void scsi_hd_set_drive_defect(DeviceState *dev, const char *type, int defect_count, Error **errp)
+{
+    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, SCSI_DEVICE(dev));
+    DriveDefect *dptr = NULL;
+    long *p_dl_size;
+    DriveDefect **p_dl;
+
+    dptr = (DriveDefect *)g_malloc0(sizeof(DriveDefect)*defect_count);
+    if (!dptr && defect_count) {
+        error_setg(errp, "Fail to set new disk glist");
+        return;
+    }
+
+    if (!strcmp(type, "glist")) {
+        p_dl_size = &s->drive_defect_desc.glist_size;
+        p_dl = &s->drive_defect_desc.glist;
+    } else if (!strcmp(type, "plist")) {
+        p_dl_size = &s->drive_defect_desc.plist_size;
+        p_dl = &s->drive_defect_desc.plist;
+    } else {
+        error_setg(errp, "Unknown defect list type: %s", type);
+        return;
+    }
+
+    if (*p_dl_size) {
+        g_free(*p_dl);
+        *p_dl = NULL;
+        *p_dl_size = 0;
+    }
+
+    *p_dl_size = defect_count;
+    *p_dl = dptr;
+
+    // Random write some data
+    int i;
+    for (i=0; i<defect_count; i++) {
+        dptr->cylinder = (i+1)*10;
+        dptr->head = (i+1)*(i+1);
+        dptr->sector = i*100;
+        dptr++;
+    }
+
+    return;
+}
+
+static DriveDefectList *scsi_hd_get_drive_defect(DeviceState *dev, const char *type, Error **errp)
+{
+    int i;
+    DriveDefectList *defect_list = NULL;
+    long *p_dl_size;
+    DriveDefect **p_dl;
+
+    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, SCSI_DEVICE(dev));
+
+    if (!strcmp(type, "glist")) {
+        p_dl_size = &s->drive_defect_desc.glist_size;
+        p_dl = &s->drive_defect_desc.glist;
+    } else if (!strcmp(type, "plist")) {
+        p_dl_size = &s->drive_defect_desc.plist_size;
+        p_dl = &s->drive_defect_desc.plist;
+    } else {
+        error_setg(errp, "Unknown defect list type: %s", type);
+        return NULL;
+    }
+
+    DriveDefect *dptr = *p_dl;
+    for (i=0; i<*p_dl_size; i++) {
+        DriveDefectList *info = g_malloc0(sizeof(DriveDefectList));
+        info->value = g_malloc0(sizeof(*info->value));
+        info->value->cylinder = dptr->cylinder;
+        info->value->head = dptr->head;
+        info->value->sector = dptr->sector;
+        info->next = defect_list;
+        defect_list = info;
+        dptr++;
+    }
+
+    return defect_list;
+}
+
 static const VMStateDescription vmstate_scsi_disk_state = {
     .name = "scsi-disk",
     .version_id = 1,
@@ -3894,6 +3979,7 @@ static void scsi_hd_class_initfn(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     SCSIDeviceClass *sc = SCSI_DEVICE_CLASS(klass);
+    DriveDefectHandlerClass*ddhc = DRIVE_DEFECT_HANDLER_CLASS(klass);
 
     sc->realize      = scsi_hd_realize;
     sc->alloc_req    = scsi_new_request;
@@ -3901,12 +3987,18 @@ static void scsi_hd_class_initfn(ObjectClass *klass, void *data)
     dc->desc = "virtual SCSI disk";
     dc->props = scsi_hd_properties;
     dc->vmsd  = &vmstate_scsi_disk_state;
+    ddhc->get_drive_defect = scsi_hd_get_drive_defect;
+    ddhc->set_drive_defect = scsi_hd_set_drive_defect;
 }
 
 static const TypeInfo scsi_hd_info = {
     .name          = "scsi-hd",
     .parent        = TYPE_SCSI_DISK_BASE,
     .class_init    = scsi_hd_class_initfn,
+    .interfaces = (InterfaceInfo[]) {
+        { TYPE_DRIVE_DEFECT_HANDLER },
+        { }
+    }
 };
 
 static const VMStateDescription vmstate_scsi_enclosure_state = {

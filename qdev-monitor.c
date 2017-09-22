@@ -998,8 +998,8 @@ void qmp_set_drive_defect(const char *id, const char *type, int64_t defect_count
         return;
     }
 
-    DriveDefectHandlerClass *ddhc = DRIVE_DEFECT_HANDLER_GET_CLASS(obj);
-    if (ddhc) {
+    if (object_dynamic_cast(obj, TYPE_DRIVE_DEFECT_HANDLER)) {
+        DriveDefectHandlerClass *ddhc = DRIVE_DEFECT_HANDLER_GET_CLASS(obj);
         if (ddhc->set_drive_defect) {
             ddhc->set_drive_defect(DEVICE(obj), type, (int)(defect_count&0xffffffff), errp);
             return;
@@ -1019,8 +1019,8 @@ DriveDefectList *qmp_get_drive_defect(const char *id, const char *type, Error **
         return NULL;
     }
 
-    DriveDefectHandlerClass *ddhc = DRIVE_DEFECT_HANDLER_GET_CLASS(obj);
-    if (ddhc) {
+    if (object_dynamic_cast(obj, TYPE_DRIVE_DEFECT_HANDLER)) {
+        DriveDefectHandlerClass *ddhc = DRIVE_DEFECT_HANDLER_GET_CLASS(obj);
         if (ddhc->get_drive_defect) {
             return ddhc->get_drive_defect(DEVICE(obj), type, errp);
         }

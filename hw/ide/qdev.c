@@ -25,13 +25,17 @@
 #include "sysemu/block-backend.h"
 #include "sysemu/blockdev.h"
 #include "hw/block/block.h"
+#include "block/drive-defect.h"
 #include "sysemu/sysemu.h"
 #include "qapi/visitor.h"
+#include "qmp-commands.h"
 
 /* --------------------------------- */
 
 static char *idebus_get_fw_dev_path(DeviceState *dev);
 static void idebus_unrealize(BusState *qdev, Error **errp);
+static void ide_hd_set_drive_defect(DeviceState *dev, const char *type, int defect_count, Error **errp);
+static DriveDefectList *ide_hd_get_drive_defect(DeviceState *dev, const char *type, Error **errp);
 
 static Property ide_props[] = {
     DEFINE_PROP_UINT32("unit", IDEDevice, unit, -1),
@@ -158,7 +162,88 @@ int ide_get_bios_chs_trans(BusState *bus, int unit)
 typedef struct IDEDrive {
     IDEDevice dev;
     uint32_t rotation;
+    struct DriveDefectDescriptor drive_defect_desc;
 } IDEDrive;
+
+static void ide_hd_set_drive_defect(DeviceState *dev, const char *type, int defect_count, Error **errp)
+{
+    IDEDrive *s = DO_UPCAST(IDEDrive, dev, IDE_DEVICE(dev));
+    DriveDefect *dptr = NULL;
+    long *p_dl_size;
+    DriveDefect **p_dl;
+
+    dptr = (DriveDefect *)g_malloc0(sizeof(DriveDefect)*defect_count);
+    if (!dptr && defect_count) {
+        error_setg(errp, "Fail to set new disk glist");
+        return;
+    }
+
+    if (!strcmp(type, "glist")) {
+        p_dl_size = &s->drive_defect_desc.glist_size;
+        p_dl = &s->drive_defect_desc.glist;
+    } else if (!strcmp(type, "plist")) {
+        p_dl_size = &s->drive_defect_desc.plist_size;
+        p_dl = &s->drive_defect_desc.plist;
+    } else {
+        error_setg(errp, "Unknown defect list type: %s", type);
+        return;
+    }
+
+    if (*p_dl_size) {
+        g_free(*p_dl);
+        *p_dl = NULL;
+        *p_dl_size = 0;
+    }
+
+    *p_dl_size = defect_count;
+    *p_dl = dptr;
+
+    // Random write some data
+    int i;
+    for (i=0; i<defect_count; i++) {
+        dptr->cylinder = (i+1)*10;
+        dptr->head = (i+1)*(i+1);
+        dptr->sector = i*100;
+        dptr++;
+    }
+
+    return;
+}
+
+static DriveDefectList *ide_hd_get_drive_defect(DeviceState *dev, const char *type, Error **errp)
+{
+    int i;
+    DriveDefectList *defect_list = NULL;
+    long *p_dl_size;
+    DriveDefect **p_dl;
+
+    IDEDrive *s = DO_UPCAST(IDEDrive, dev, IDE_DEVICE(dev));
+
+    if (!strcmp(type, "glist")) {
+        p_dl_size = &s->drive_defect_desc.glist_size;
+        p_dl = &s->drive_defect_desc.glist;
+    } else if (!strcmp(type, "plist")) {
+        p_dl_size = &s->drive_defect_desc.plist_size;
+        p_dl = &s->drive_defect_desc.plist;
+    } else {
+        error_setg(errp, "Unknown defect list type: %s", type);
+        return NULL;
+    }
+
+    DriveDefect *dptr = *p_dl;
+    for (i=0; i<*p_dl_size; i++) {
+        DriveDefectList *info = g_malloc0(sizeof(DriveDefectList));
+        info->value = g_malloc0(sizeof(*info->value));
+        info->value->cylinder = dptr->cylinder;
+        info->value->head = dptr->head;
+        info->value->sector = dptr->sector;
+        info->next = defect_list;
+        defect_list = info;
+        dptr++;
+    }
+
+    return defect_list;
+}
 
 static int ide_dev_initfn(IDEDevice *dev, IDEDriveKind kind)
 {
@@ -324,10 +409,14 @@ static void ide_hd_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     IDEDeviceClass *k = IDE_DEVICE_CLASS(klass);
+    DriveDefectHandlerClass*ddhc = DRIVE_DEFECT_HANDLER_CLASS(klass);
+
     k->init = ide_hd_initfn;
     dc->fw_name = "drive";
     dc->desc = "virtual IDE disk";
     dc->props = ide_hd_properties;
+    ddhc->get_drive_defect = ide_hd_get_drive_defect;
+    ddhc->set_drive_defect = ide_hd_set_drive_defect;
 }
 
 static const TypeInfo ide_hd_info = {
@@ -335,6 +424,10 @@ static const TypeInfo ide_hd_info = {
     .parent        = TYPE_IDE_DEVICE,
     .instance_size = sizeof(IDEDrive),
     .class_init    = ide_hd_class_init,
+    .interfaces    = (InterfaceInfo[]) {
+        { TYPE_DRIVE_DEFECT_HANDLER },
+        { }
+    }
 };
 
 static Property ide_cd_properties[] = {

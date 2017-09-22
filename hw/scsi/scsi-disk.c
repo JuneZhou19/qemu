@@ -3995,7 +3995,7 @@ static const TypeInfo scsi_hd_info = {
     .name          = "scsi-hd",
     .parent        = TYPE_SCSI_DISK_BASE,
     .class_init    = scsi_hd_class_initfn,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces    = (InterfaceInfo[]) {
         { TYPE_DRIVE_DEFECT_HANDLER },
         { }
     }

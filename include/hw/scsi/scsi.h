@@ -245,6 +245,7 @@ extern const struct SCSISense sense_code_SPACE_ALLOC_FAILED;
 
 extern const struct SCSISense sense_code_KEY_NOT_READY_ENCL_SRVC_NA;
 extern const struct SCSISense sense_code_ILLEGAL_REQ_ENCL_FUNC_NOT_SUPPORTED;
+extern const struct SCSISense sense_code_DEFECT_LIST_NOT_FOUND;
 
 #define SENSE_CODE(x) sense_code_ ## x
 

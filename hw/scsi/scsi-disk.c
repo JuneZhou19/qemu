@@ -2737,6 +2737,115 @@ static void scsi_disk_emulate_write_data(SCSIRequest *req)
     }
 }
 
+void fill_drive_defect(uint8_t *outbuf, int list_format, DriveDefect *dptr);
+
+void fill_drive_defect(uint8_t *outbuf, int list_format, DriveDefect *dptr)
+{
+    switch (list_format) {
+    case ADDR_FMT_CHS:
+    case ADDR_FMT_CHO:
+        outbuf[0] = (dptr->cylinder >> 16) & 0xff;
+        outbuf[1] = (dptr->cylinder >> 8) & 0xff;
+        outbuf[2] = dptr->cylinder & 0xff;
+        outbuf[3] = dptr->head & 0xf;
+        outbuf[4] = (dptr->sector >> 24) & 0xff;
+        outbuf[5] = (dptr->sector >> 16) & 0xff;
+        outbuf[6] = (dptr->sector >> 8) & 0xff;
+        outbuf[7] = dptr->sector & 0xff;
+        break;
+    case ADDR_FMT_LONG:
+    case ADDR_FMT_SHORT:
+    default:
+        break;
+    }
+
+    return;
+}
+
+void read_drive_defect_10(SCSIDiskState *s, bool b_plist, bool b_glist, int list_format, int len_to_read, uint8_t *outbuf);
+
+void read_drive_defect_10(SCSIDiskState *s, bool b_plist, bool b_glist, int list_format, int len_to_read, uint8_t *outbuf)
+{
+    int list_size = 0, out_size = 0;
+    if (b_plist)
+        list_size += (s->drive_defect_desc.plist_size)*ADDR_LENGTH(list_format);
+    if (b_glist)
+        list_size += (s->drive_defect_desc.glist_size)*ADDR_LENGTH(list_format);
+
+    int idx = 0;
+    int fmt = (list_format==ADDR_FMT_CHS || list_format==ADDR_FMT_CHO) ? list_format : ADDR_FMT_CHS ;
+    outbuf[idx++] = 0;
+    // FIXME: we support CHS format only now.
+    outbuf[idx++] |= b_plist << 4 | b_glist << 3 | (fmt & 0x7);
+    out_size = MIN(list_size, len_to_read);
+    outbuf[idx++] = (list_size >> 8) & 0xff;
+    outbuf[idx++] = list_size & 0xff;
+
+    int p = 0, g = 0;
+    if (b_plist) {
+        for (;
+             p<out_size/ADDR_LENGTH(list_format)
+                && p<s->drive_defect_desc.plist_size;
+             p++) {
+            fill_drive_defect(outbuf+idx, list_format, s->drive_defect_desc.plist+p);
+            idx += ADDR_LENGTH(list_format);
+        }
+    }
+    if (b_glist) {
+        for (;
+             p+g<out_size/ADDR_LENGTH(list_format)
+                && g<s->drive_defect_desc.glist_size;
+             g++) {
+            fill_drive_defect(outbuf+idx, list_format, s->drive_defect_desc.glist+g);
+            idx += ADDR_LENGTH(list_format);
+        }
+    }
+}
+
+void read_drive_defect_12(SCSIDiskState *s, bool b_plist, bool b_glist, int list_format, int len_to_read, uint8_t *outbuf);
+
+void read_drive_defect_12(SCSIDiskState *s, bool b_plist, bool b_glist, int list_format, int len_to_read, uint8_t *outbuf)
+{
+    int list_size = 0, out_size = 0;
+    if (b_plist)
+        list_size += (s->drive_defect_desc.plist_size)*ADDR_LENGTH(list_format);
+    if (b_glist)
+        list_size += (s->drive_defect_desc.glist_size)*ADDR_LENGTH(list_format);
+
+    int idx = 0;
+    int fmt = (list_format==ADDR_FMT_CHS || list_format==ADDR_FMT_CHO) ? list_format : ADDR_FMT_CHS; 
+    outbuf[idx++] = 0;
+    // FIXME: we support CHS format only now.
+    outbuf[idx++] |= b_plist << 4 | b_glist << 3 | (fmt & 0x7);
+    outbuf[idx++] = 0;
+    outbuf[idx++] = 0;
+    out_size = MIN(list_size, len_to_read);
+    outbuf[idx++] = (list_size >> 24) & 0xff;
+    outbuf[idx++] = (list_size >> 16) & 0xff;
+    outbuf[idx++] = (list_size >> 8) & 0xff;
+    outbuf[idx++] = list_size & 0xff;
+
+    int p = 0, g = 0;
+    if (b_plist) {
+        for (;
+             p<out_size/ADDR_LENGTH(list_format)
+                && p<s->drive_defect_desc.plist_size;
+             p++) {
+            fill_drive_defect(outbuf+idx, list_format, s->drive_defect_desc.plist+p);
+            idx += ADDR_LENGTH(list_format);
+        }
+    }
+    if (b_glist) {
+        for (;
+             p+g<out_size/ADDR_LENGTH(list_format)
+                && g<s->drive_defect_desc.glist_size;
+             g++) {
+            fill_drive_defect(outbuf+idx, list_format, s->drive_defect_desc.glist+g);
+            idx += ADDR_LENGTH(list_format);
+        }
+    }
+}
+
 static int32_t scsi_disk_emulate_command(SCSIRequest *req, uint8_t *buf)
 {
     SCSIDiskReq *r = DO_UPCAST(SCSIDiskReq, req, req);
@@ -3040,6 +3149,53 @@ static int32_t scsi_disk_emulate_command(SCSIRequest *req, uint8_t *buf)
         DPRINTF("WRITE SAME %d (len %lu)\n",
                 req->cmd.buf[0] == WRITE_SAME_10 ? 10 : 16,
                 (unsigned long)r->req.cmd.xfer);
+        break;
+    case READ_DEFECT_DATA:
+        DPRINTF("READ DEFECT DATA 10 (len %lu)\n",
+                (long)r->req.cmd.xfer);
+        bool b_plist, b_glist;
+        int list_format, len_to_read;
+
+        b_plist = (req->cmd.buf[2] >> 4) & 0x1;
+        b_glist = (req->cmd.buf[2] >> 3) & 0x1;
+        list_format = req->cmd.buf[2] & 0x07;
+        len_to_read = (req->cmd.buf[7] << 8) + req->cmd.buf[8] - 4;
+
+        if (len_to_read % ADDR_LENGTH(list_format))
+            goto illegal_request;
+
+        read_drive_defect_10(s, b_plist, b_glist,
+                             list_format, len_to_read, outbuf);
+
+        if ((outbuf[1] & 0x07) != list_format) {
+            scsi_check_condition(r, SENSE_CODE(DEFECT_LIST_NOT_FOUND));
+            return 0;
+        }
+        break;
+    case READ_DEFECT_DATA_12:
+        DPRINTF("READ DEFECT DATA 12 (len %lu)\n",
+                (long)r->req.cmd.xfer);
+        bool b_plist_12, b_glist_12;
+        int list_format_12, len_to_read_12;
+
+        b_plist_12 = (req->cmd.buf[1] >> 4) & 0x1;
+        b_glist_12 = (req->cmd.buf[1] >> 3) & 0x1;
+        list_format_12 = req->cmd.buf[1] & 0x07;
+        len_to_read_12 = (req->cmd.buf[6] << 24)
+                         + (req->cmd.buf[7] << 16)
+                         + (req->cmd.buf[8] << 8)
+                         + req->cmd.buf[9] - 8;
+
+        if (len_to_read_12 % ADDR_LENGTH(list_format_12))
+            goto illegal_request;
+
+        read_drive_defect_12(s, b_plist_12, b_glist_12,
+                             list_format_12, len_to_read_12, outbuf);
+
+        if ((outbuf[1] & 0x07) != list_format_12) {
+            scsi_check_condition(r, SENSE_CODE(DEFECT_LIST_NOT_FOUND));
+            return 0;
+        }
         break;
     default:
         DPRINTF("Unknown SCSI command (%2.2x=%s)\n", buf[0],
@@ -3438,6 +3594,8 @@ static const SCSIReqOps *const scsi_disk_reqops_dispatch[256] = {
     [RECEIVE_DIAGNOSTIC]              = &scsi_disk_emulate_reqops,
     [SEND_DIAGNOSTIC]                 = &scsi_disk_emulate_reqops,
     [LOG_SENSE]                       = &scsi_disk_emulate_reqops,
+    [READ_DEFECT_DATA]                = &scsi_disk_emulate_reqops,
+    [READ_DEFECT_DATA_12]             = &scsi_disk_emulate_reqops,
     [READ_6]                          = &scsi_disk_dma_reqops,
     [READ_10]                         = &scsi_disk_dma_reqops,
     [READ_12]                         = &scsi_disk_dma_reqops,

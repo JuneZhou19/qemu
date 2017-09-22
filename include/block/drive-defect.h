@@ -55,4 +55,11 @@ typedef struct DriveDefectHandlerClass {
     void (*set_drive_defect)(DeviceState *dev, const char *type, int defect_count, Error **errp);
 } DriveDefectHandlerClass;
 
+#define ADDR_FMT_SHORT  0b000
+#define ADDR_FMT_LONG   0b011
+#define ADDR_FMT_CHO    0b100
+#define ADDR_FMT_CHS    0b101
+#define ADDR_FMT_VENDOR 0b110
+#define ADDR_LENGTH(fmt) ((fmt)?8:4)
+
 #endif

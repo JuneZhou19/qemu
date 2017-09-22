@@ -1548,6 +1548,11 @@ const struct SCSISense sense_code_KEY_NOT_READY_ENCL_SRVC_NA = {
     .key = NOT_READY, .asc = 0x35, .ascq = 0x02
 };
 
+/* defect list not found*/
+const struct SCSISense sense_code_DEFECT_LIST_NOT_FOUND = {
+    .key = RECOVERED_ERROR, .asc = 0x1c, .ascq = 0x01
+};
+
 /*
  * scsi_build_sense
  *

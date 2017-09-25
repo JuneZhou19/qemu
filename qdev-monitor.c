@@ -1,4 +1,4 @@
-                                                /*
+/*
  *  Dynamic device configuration and creation.
  *
  *  Copyright (c) 2009 CodeSourcery
@@ -988,7 +988,7 @@ static Object *qdev_get_object_by_id(const char *id)
     return obj;
 }
 
-void qmp_set_drive_defect(const char *id, const char *type, int64_t defect_count, Error **errp)
+void qmp_set_drive_defect(const char *id, const char *type, uint32_t defect_count, Error **errp)
 {
 
     Object *obj = qdev_get_object_by_id(id);
@@ -1001,7 +1001,7 @@ void qmp_set_drive_defect(const char *id, const char *type, int64_t defect_count
     if (object_dynamic_cast(obj, TYPE_DRIVE_DEFECT_HANDLER)) {
         DriveDefectHandlerClass *ddhc = DRIVE_DEFECT_HANDLER_GET_CLASS(obj);
         if (ddhc->set_drive_defect) {
-            ddhc->set_drive_defect(DEVICE(obj), type, (int)(defect_count&0xffffffff), errp);
+            ddhc->set_drive_defect(DEVICE(obj), type, defect_count, errp);
             return;
         }
     }

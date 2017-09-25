@@ -35,6 +35,7 @@
 static char *idebus_get_fw_dev_path(DeviceState *dev);
 static void idebus_unrealize(BusState *qdev, Error **errp);
 static void ide_hd_set_drive_defect(DeviceState *dev, const char *type, int defect_count, Error **errp);
+static void ide_hd_set_drive_defect(DeviceState *dev, const char *type, uint32_t defect_count, Error **errp);
 static DriveDefectList *ide_hd_get_drive_defect(DeviceState *dev, const char *type, Error **errp);
 
 static Property ide_props[] = {
@@ -165,11 +166,11 @@ typedef struct IDEDrive {
     struct DriveDefectDescriptor drive_defect_desc;
 } IDEDrive;
 
-static void ide_hd_set_drive_defect(DeviceState *dev, const char *type, int defect_count, Error **errp)
+static void ide_hd_set_drive_defect(DeviceState *dev, const char *type, uint32_t defect_count, Error **errp)
 {
     IDEDrive *s = DO_UPCAST(IDEDrive, dev, IDE_DEVICE(dev));
     DriveDefect *dptr = NULL;
-    long *p_dl_size;
+    uint32_t *p_dl_size;
     DriveDefect **p_dl;
 
     dptr = (DriveDefect *)g_malloc0(sizeof(DriveDefect)*defect_count);
@@ -199,7 +200,7 @@ static void ide_hd_set_drive_defect(DeviceState *dev, const char *type, int defe
     *p_dl = dptr;
 
     // Random write some data
-    int i;
+    uint32_t i;
     for (i=0; i<defect_count; i++) {
         dptr->cylinder = (i+1)*10;
         dptr->head = (i+1)*(i+1);
@@ -212,9 +213,9 @@ static void ide_hd_set_drive_defect(DeviceState *dev, const char *type, int defe
 
 static DriveDefectList *ide_hd_get_drive_defect(DeviceState *dev, const char *type, Error **errp)
 {
-    int i;
+    uint32_t i;
     DriveDefectList *defect_list = NULL;
-    long *p_dl_size;
+    uint32_t *p_dl_size;
     DriveDefect **p_dl;
 
     IDEDrive *s = DO_UPCAST(IDEDrive, dev, IDE_DEVICE(dev));

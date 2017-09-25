@@ -25,9 +25,9 @@
 
 struct DriveDefectDescriptor
 {
-    long glist_size;
+    uint32_t glist_size;
     DriveDefect *glist;
-    long plist_size;
+    uint32_t plist_size;
     DriveDefect *plist;
 };
 
@@ -52,7 +52,7 @@ typedef struct DriveDefectHandlerClass {
 
     /* <public> */
     DriveDefectList* (*get_drive_defect)(DeviceState *dev, const char *type, Error **errp);
-    void (*set_drive_defect)(DeviceState *dev, const char *type, int defect_count, Error **errp);
+    void (*set_drive_defect)(DeviceState *dev, const char *type, uint32_t defect_count, Error **errp);
 } DriveDefectHandlerClass;
 
 #define ADDR_FMT_SHORT  0b000

@@ -6551,9 +6551,9 @@
 ##
 
 { 'struct': 'DriveDefect',
-  'data': { 'cylinder': 'int',
-            'head': 'int',
-            'sector': 'int' } }
+  'data': { 'cylinder': 'uint32',
+            'head': 'uint32',
+            'sector': 'uint32' } }
 
 ##
 # @set-drive-defect:
@@ -6568,7 +6568,7 @@
 #
 # @defect-count: defects count to inject.
 ##
-{ 'command': 'set-drive-defect', 'data': { 'id': 'str', 'type': 'str', 'defect-count': 'int' } }
+{ 'command': 'set-drive-defect', 'data': { 'id': 'str', 'type': 'str', 'defect-count': 'uint32' } }
 
 ##
 # @get-drive-defect:

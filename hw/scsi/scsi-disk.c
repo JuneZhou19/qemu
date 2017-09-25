@@ -126,7 +126,7 @@ typedef struct SCSIDiskState
 } SCSIDiskState;
 
 static int scsi_handle_rw_error(SCSIDiskReq *r, int error, bool acct_failed);
-static void scsi_hd_set_drive_defect(DeviceState *dev, const char *type, int defect_count, Error **errp);
+static void scsi_hd_set_drive_defect(DeviceState *dev, const char *type, uint32_t defect_count, Error **errp);
 static DriveDefectList *scsi_hd_get_drive_defect(DeviceState *dev, const char *type, Error **errp);
 
 static void scsi_free_request(SCSIRequest *req)
@@ -4038,11 +4038,11 @@ static Property scsi_hd_properties[] = {
     DEFINE_PROP_END_OF_LIST(),
 };
 
-static void scsi_hd_set_drive_defect(DeviceState *dev, const char *type, int defect_count, Error **errp)
+static void scsi_hd_set_drive_defect(DeviceState *dev, const char *type, uint32_t defect_count, Error **errp)
 {
     SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, SCSI_DEVICE(dev));
     DriveDefect *dptr = NULL;
-    long *p_dl_size;
+    uint32_t *p_dl_size;
     DriveDefect **p_dl;
 
     dptr = (DriveDefect *)g_malloc0(sizeof(DriveDefect)*defect_count);
@@ -4072,7 +4072,7 @@ static void scsi_hd_set_drive_defect(DeviceState *dev, const char *type, int def
     *p_dl = dptr;
 
     // Random write some data
-    int i;
+    uint32_t i;
     for (i=0; i<defect_count; i++) {
         dptr->cylinder = (i+1)*10;
         dptr->head = (i+1)*(i+1);
@@ -4085,9 +4085,9 @@ static void scsi_hd_set_drive_defect(DeviceState *dev, const char *type, int def
 
 static DriveDefectList *scsi_hd_get_drive_defect(DeviceState *dev, const char *type, Error **errp)
 {
-    int i;
+    uint32_t i;
     DriveDefectList *defect_list = NULL;
-    long *p_dl_size;
+    uint32_t *p_dl_size;
     DriveDefect **p_dl;
 
     SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, SCSI_DEVICE(dev));

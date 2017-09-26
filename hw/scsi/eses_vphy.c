@@ -1,4 +1,5 @@
 #include "eses.h"
+#include "trace-root.h"
 #include "trace.h"
 #include "trace/control.h"
 

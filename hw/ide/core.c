@@ -1781,7 +1781,7 @@ static bool cmd_security_erase_unit(IDEState *s, uint8_t cmd)
         write_size = (remain_size - write_size) > 0 ? write_size : remain_size;
         block_acct_start(blk_get_stats(s->blk), &s->acct,
                          s->nb_sectors * BDRV_SECTOR_SIZE, BLOCK_ACCT_WRITE);
-        s->pio_aiocb = blk_aio_write_zeroes(s->blk,
+        s->pio_aiocb = blk_aio_pwrite_zeroes(s->blk,
                                 (s->nb_sectors - remain_size),
                                  write_size,
                                  0, ide_erase_cb, s);

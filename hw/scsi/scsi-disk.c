@@ -1740,7 +1740,7 @@ static void *format_unit_processing(void *opaque)
                          &myc->cookie,
                          write_size * (s->qdev.blocksize / 512),
                          BLOCK_ACCT_WRITE);
-        blk_aio_write_zeroes(s->qdev.conf.blk,
+        blk_aio_pwrite_zeroes(s->qdev.conf.blk,
                              s->qdev.max_lba + 1 - remain,
                              write_size * (s->qdev.blocksize / 512),
                              0, format_unit_write_cb, myc);

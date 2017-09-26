@@ -25,8 +25,9 @@ do {  qemu_log_mask(LOG_TRACE, fmt, ##__VA_ARGS__); \
 #ifdef __linux
 #include <scsi/sg.h>
 #include <unistd.h>
-#include "trace/control.h"
+#include "trace-root.h"
 #include "trace.h"
+#include "trace/control.h"
 #endif
 
 static void scsi_free_request(SCSIRequest *req)

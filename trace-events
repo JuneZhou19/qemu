@@ -33,6 +33,14 @@ cpu_out(unsigned int addr, char size, unsigned int val) "addr 0x%x(%c) value %u"
 # Since requests are raised via monitor, not many tracepoints are needed.
 balloon_event(void *opaque, unsigned long addr) "opaque %p addr %lu"
 
+# vl.c
+vm_state_notify(int running, int reason) "running %d reason %d"
+load_file(const char *name, const char *path) "name %s location %s"
+runstate_set(int new_state) "new state %d"
+system_wakeup_request(int reason) "reason=%d"
+qemu_system_shutdown_request(int reason) "reason=%d"
+qemu_system_powerdown_request(void) ""
+
 # monitor.c
 monitor_protocol_event_handler(uint32_t event, void *qdict) "event=%d data=%p"
 monitor_protocol_event_emit(uint32_t event, void *data) "event=%d data=%p"
@@ -117,15 +125,3 @@ vcpu guest_user_syscall(uint64_t num, uint64_t arg1, uint64_t arg2, uint64_t arg
 # Mode: user
 # Targets: TCG(all)
 vcpu guest_user_syscall_ret(uint64_t num, uint64_t ret) "num=0x%016"PRIx64" ret=0x%016"PRIx64
-
-# hw/intc/aspeed_vic.c
-aspeed_vic_set_irq(int irq, int level) "Enabling IRQ %d: %d"
-aspeed_vic_update_fiq(int flags) "Raising FIQ: %d"
-aspeed_vic_update_irq(int flags) "Raising IRQ: %d"
-aspeed_vic_read(uint64_t offset, unsigned size, uint32_t value) "From 0x%" PRIx64 " of size %u: 0x%" PRIx32
-aspeed_vic_write(uint64_t offset, unsigned size, uint32_t data) "To 0x%" PRIx64 " of size %u: 0x%" PRIx32
-
-# ESES functionality
-eses_sas_info_exp_phy_status(const char *s, uint32_t status) "%s fail, status: %d"
-eses_sas_info_array_device_slot_status(const char *s, uint32_t status) "%s fail, status: %d"
-eses_vphy_get_individual_conn_to_phy_mapping(uint32_t encl_type, uint8_t connector_id, uint8_t individual_lane, uint8_t phy_id) "Get conn to phy mapping: encl_type:%d conn_id:%d lane:%d phy_id:%d"

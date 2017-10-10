@@ -30,6 +30,11 @@ do {  qemu_log_mask(LOG_TRACE, fmt, ##__VA_ARGS__); \
 #include "trace/control.h"
 #endif
 
+static int scsi_ses_read_buffer(SCSIRequest *req, uint8_t *outbuf);
+static int scsi_ses_read_buffer_descriptor(SCSIRequest *req, uint8_t *outbuf);
+static int scsi_ses_read_buffer_data(SCSIRequest *req, uint8_t *outbuf);
+static void scsi_ses_free_buffer(char **ptr_scsi_buffer);
+
 static void scsi_free_request(SCSIRequest *req)
 {
 }
@@ -733,6 +738,209 @@ static int scsi_ses_emulate_inquiry(SCSIRequest *req, uint8_t *outbuf)
     return buflen;
 }
 
+static bool scsi_ses_buffer_checksum(SCSIDevice *ses_device, char *buffer_file)
+{
+    int i = 0;
+    bool ret = true;
+    int idx, checksum;
+    char msg[1024];
+    FILE *f = fopen(buffer_file, "rb");
+    if(!f){
+        /*Failed to open file*/
+        sprintf(msg, "Failed to open file %s", buffer_file);
+        trace_scsi_ses_read_buffer_fail(msg);
+        return false;
+    }
+
+    char *scsi_buffers[SCSI_BUFFER_COUNT]={NULL};
+
+    // Parse buffer file
+    SCSIBufferheader buff_header[SCSI_BUFFER_COUNT];
+    while (1) {
+        if(fread(&buff_header[i], sizeof(char), SCSI_BUFFER_HEADER_SIZE, f) == SCSI_BUFFER_HEADER_SIZE){
+            trace_scsi_buffer_load(buff_header[i].buffer_id,
+                                 buff_header[i].buffer_size,
+                                 buff_header[i].p_buff_next,
+                                 buff_header[i].p_data_start);
+            if (buff_header[i].p_buff_next == 0xffffffff)
+                break;
+            i++;
+        }else{
+            break;
+        }
+    }
+    // Prepare memory
+    for(i=0; i<SCSI_BUFFER_COUNT; i++)
+    {
+        if (buff_header[i].p_buff_next == 0)
+            break;
+        trace_scsi_buffer_malloc(buff_header[i].buffer_size);
+        scsi_buffers[i] = (char *)g_malloc(buff_header[i].buffer_size+1);
+        fseek(f, buff_header[i].p_data_start, SEEK_SET);
+        if (fread(scsi_buffers[i], sizeof(char), buff_header[i].buffer_size+1, f) != buff_header[i].buffer_size+1 ) {
+            ret = false;
+            goto error_ret;
+        }
+
+        /*Calculate checksum for each buffer*/
+        checksum = 0;
+        for (idx=0; idx<=buff_header[i].buffer_size; idx++){
+            checksum += scsi_buffers[i][idx];
+        }
+        if (0==checksum%256) {
+            trace_scsi_buffer_checksum_validation(buff_header[i].buffer_id, "valid");
+        }
+        else {
+            trace_scsi_buffer_checksum_validation(buff_header[i].buffer_id, "invalid");
+            ret = false;
+            goto error_ret;
+        }
+
+        trace_scsi_pointer_of_buffer_data(buff_header[i].buffer_id, scsi_buffers[i]);
+        if (buff_header[i].p_buff_next == 0xffffffff)
+            break;
+    }
+
+error_ret:
+    fclose(f);
+    scsi_ses_free_buffer(scsi_buffers);
+    return ret;
+}
+
+static void scsi_ses_free_buffer(char **ptr_scsi_buffer)
+{
+    int i;
+
+    for (i=0; i<SCSI_BUFFER_COUNT; i++) {
+        if (!ptr_scsi_buffer[i])
+            continue;
+        g_free(ptr_scsi_buffer[i]);
+    }
+}
+
+
+static int scsi_ses_read_buffer(SCSIRequest *req, uint8_t *outbuf)
+{
+    char msg[1024];
+    // FIXME: Use const mask rather than 0x1f here
+    uint8_t read_buffer_mode = req->cmd.buf[1] & 0x1f;
+    switch(read_buffer_mode){
+        case 0x2:
+            return scsi_ses_read_buffer_data(req, outbuf);
+        case 0x3:
+            return scsi_ses_read_buffer_descriptor(req, outbuf);
+        default:
+            sprintf(msg, "read buffer mode is %d", read_buffer_mode);
+            trace_scsi_ses_read_buffer_fail(msg);
+            return -1;
+    }
+}
+static int scsi_ses_read_buffer_descriptor(SCSIRequest *req, uint8_t *outbuf)
+{
+    SCSISESState *s = DO_UPCAST(SCSISESState, qdev, req->dev);
+    int i=0;
+    uint32_t scsi_buffer_size;
+    char msg[1024];
+    bool id_found = false;
+    SCSIBufferheader buff_header[SCSI_BUFFER_COUNT];
+    FILE *f = fopen(s->ses_buffer_file, "rb");
+    if(!f){
+        /*Failed to open file*/
+        sprintf(msg, "Failed to open file %s", s->ses_buffer_file);
+        trace_scsi_ses_read_buffer_fail(msg);
+        return -1;
+    }
+
+    uint8_t scsi_buffer_id = req->cmd.buf[2];
+    while (1) {
+        if(fread(&buff_header[i], sizeof(char), SCSI_BUFFER_HEADER_SIZE, f) == SCSI_BUFFER_HEADER_SIZE){
+            if(buff_header[i].buffer_id == scsi_buffer_id) {
+                id_found = true;
+                break;
+            }
+            if (buff_header[i].p_buff_next == 0xffffffff)
+                break;
+            i++;
+        }
+    }
+
+    if(!id_found) {
+        sprintf(msg, "Failed to find id %d", scsi_buffer_id);
+        trace_scsi_ses_read_buffer_fail(msg);
+        return -1;
+    }
+
+    scsi_buffer_size = buff_header[i].buffer_size;
+
+    if ((scsi_buffer_size >> 24) & 0xff)
+        return -1;
+
+    outbuf[0] = 0;  /* This byte indicates buffer data alignment,
+                     * 0h is Byte boundaries
+                     */
+    outbuf[1] =  (scsi_buffer_size >> 16) & 0xff;
+    outbuf[2] =  (scsi_buffer_size >> 8) & 0xff;
+    outbuf[3] =  (scsi_buffer_size >> 0) & 0xff;
+
+    return 4;
+}
+static int scsi_ses_read_buffer_data(SCSIRequest *req, uint8_t *outbuf)
+{
+    SCSISESState *s = DO_UPCAST(SCSISESState, qdev, req->dev);
+    char msg[1024];
+    SCSIBufferheader buff_header;
+    uint8_t scsi_buffer_id = req->cmd.buf[2];
+    bool id_found = false;
+    FILE *f = fopen(s->ses_buffer_file, "rb");
+    if(!f) {
+        sprintf(msg, "Failed to open file %s", s->ses_buffer_file);
+        trace_scsi_ses_read_buffer_fail(msg);
+        return -1;
+    }
+    while (1) {
+        if(fread(&buff_header, sizeof(char), SCSI_BUFFER_HEADER_SIZE, f) == SCSI_BUFFER_HEADER_SIZE){
+            if(buff_header.buffer_id == scsi_buffer_id) {
+                id_found = true;
+                break;
+            }
+            if (buff_header.p_buff_next == 0xffffffff)
+                break;
+        }
+    }
+    if(!id_found) {
+        sprintf(msg, "Buffer id %d not found in buffer file", scsi_buffer_id);
+        trace_scsi_ses_read_buffer_fail(msg);
+        goto error_ret;
+    }
+    /*buffer id is found in buffer head: buff_header*/
+
+    /*Get buffer offset and length from request*/
+    uint32_t read_buffer_offset = (req->cmd.buf[3]<<16)+(req->cmd.buf[4]<<8)+req->cmd.buf[5];
+    uint32_t read_buffer_length = (req->cmd.buf[6]<<16)+(req->cmd.buf[7]<<8)+req->cmd.buf[8];
+
+    if (read_buffer_offset+read_buffer_length>buff_header.buffer_size) {
+        sprintf(msg, "buffer data overflow, id %d, buffer size %d, offset %d, length %d",
+                     scsi_buffer_id, buff_header.buffer_size,
+                     read_buffer_offset, read_buffer_length);
+        trace_scsi_ses_read_buffer_fail(msg);
+        goto error_ret;
+    }
+    /*read data with offset defined in buff_header.p_data_start*/
+    fseek(f, buff_header.p_data_start + read_buffer_offset, SEEK_SET);
+    if (fread(outbuf, sizeof(char), read_buffer_length, f) != read_buffer_length) {
+        sprintf(msg, "Fail to find buffer data from offset: %d", buff_header.p_data_start);
+        trace_scsi_ses_read_buffer_fail(msg);
+        goto error_ret;
+    } else {
+        fclose(f);
+        return read_buffer_length;
+    }
+
+error_ret:
+    fclose(f);
+    return -1;
+}
+
 static int scsi_ses_emulate_mode_sense(SCSISESReq *r, uint8_t *outbuf)
 {
     return 0;
@@ -852,6 +1060,25 @@ static int32_t scsi_ses_emulate_command(SCSIRequest *req, uint8_t *buf)
     case SEND_DIAGNOSTIC:
         break;
     case READ_BUFFER:
+<<<<<<< HEAD
+=======
+        if (s->ses_buffer_file) {
+            if(s->ses_buffer_checksum) {
+                buflen = scsi_ses_read_buffer(req, outbuf);
+            }
+            else
+                goto illegal_request;
+        } else {
+            /*Not provide buffer file, fill 0 according to request */
+            uint32_t read_buffer_length = (req->cmd.buf[6]<<16)+(req->cmd.buf[7]<<8)+req->cmd.buf[8];
+            memset(outbuf, 0, read_buffer_length);
+            buflen = read_buffer_length;
+        }
+        if (buflen<0) {
+            goto illegal_request;
+        }
+        r->buflen = buflen;
+>>>>>>> 5686037... Refect read buffer
         break;
     default:
         DPRINTF("Unknown SCSI command (%2.2x=%s)\n", buf[0],
@@ -901,6 +1128,9 @@ static void scsi_ses_realize(SCSIDevice *dev, Error **errp)
     if (!s->vendor)  {
         s->vendor = g_strdup("QEMU");
     }
+
+    if(s->ses_buffer_file)
+        s->ses_buffer_checksum = scsi_ses_buffer_checksum(dev, s->ses_buffer_file);
 
     /* initialize ESES, put here for current_machine is ready */
     config_page_init(s->side);

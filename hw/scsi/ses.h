@@ -35,6 +35,8 @@ struct SCSISESState {
     char *serial;
     char *vendor;
     char *product;
+    char *ses_buffer_file;
+    bool ses_buffer_checksum;
     uint8_t dae_type;
     uint8_t side;
     uint8_t physical_port;

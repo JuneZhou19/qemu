@@ -35,6 +35,16 @@ typedef struct SCSISense {
 #define SCSI_SENSE_BUF_SIZE_OLD 96
 #define SCSI_SENSE_BUF_SIZE 252
 
+typedef struct SCSIBufferheader {
+    uint32_t buffer_id:8;
+    uint32_t buffer_size:24;
+    uint32_t p_buff_next:32;
+    uint32_t p_data_start:32;
+} SCSIBufferheader;
+
+#define SCSI_BUFFER_COUNT 64
+#define SCSI_BUFFER_HEADER_SIZE 12
+
 struct SCSICommand {
     uint8_t buf[SCSI_CMD_BUF_SIZE];
     int len;

@@ -6584,3 +6584,8 @@
 # Returns: a list of DriveDefect objects.
 ##
 { 'command': 'get-drive-defect', 'data': { 'id': 'str', 'type': 'str'}, 'returns': [ 'DriveDefect' ] }
+
+{ 'enum': 'ActionMode',
+  'data': [ 'add', 'remove', 'modify' ] }
+
+{'command': 'scsi-drive-error-inject-life-used', 'data': { 'id': 'str', 'type': 'str', 'action':'ActionMode', 'val': 'uint8'}}

@@ -44,6 +44,7 @@ do { printf("scsi-disk: " fmt , ## __VA_ARGS__); } while (0)
 #include "qemu/timer.h"
 #include "hw/loader.h"
 #include "eses.h"
+#include "scsi-disk.h"
 #include "qmp-commands.h"
 
 #ifdef __linux
@@ -1109,18 +1110,6 @@ typedef struct log_rsp_param_header
     uint8_t param_length;
 } __attribute__((packed, aligned(2))) log_rsp_param_header_t;
 
-static uint8_t* fill_log_page_header(uint8_t* ptr, uint8_t pagecode, uint8_t subpage_code,
-                                     uint16_t page_len, uint8_t ds)
-{
-    uint8_t spf = 0;
-    if (subpage_code != 0) spf = 1;
-    *ptr++ = (spf << 6) | (ds << 7) | pagecode;
-    *ptr++ = subpage_code;
-    *ptr++ = (uint8_t)(page_len >> 8);
-    *ptr++ = (uint8_t)(page_len);
-    return ptr;
-}
-
 static inline int fill_log_parameter_header(uint8_t* *ptr, uint16_t parameter_point, uint16_t parameter_code, uint8_t du,
                                      uint8_t tsd, uint8_t etc, uint8_t tmc, uint8_t fmt_lnk, uint8_t len)
 {
@@ -1150,71 +1139,17 @@ static inline uint8_t* fill_log_parameter_protocol_specific_port_log_header(uint
     return ptr;
 }
 
-#define PROTOCOL_STANDARD_SPL 0x06
-
-// refer to SAS2r16.pdf, Chapter 10.2.8 SCSI log parameters
-typedef struct sas_phy_log_descriptor
-{
-    uint8_t rsv0;
-    uint8_t phy_id;
-    uint8_t rsv1;
-    uint8_t sas_phy_log_desc_len;
-    uint8_t atta_reason:4;
-    uint8_t attached_device_type:3;
-    uint8_t rsv2:1;
-
-    uint8_t negotiated_logic_link_rate:4;
-    uint8_t reason:4;
-
-    uint8_t rsv3:1;
-    uint8_t atta_smp_i_port: 1;
-    uint8_t atta_stp_i_port: 1;
-    uint8_t atta_ssp_i_port: 1;
-    uint8_t rsv4:4;
-
-    uint8_t rsv5:1;
-    uint8_t atta_smp_t_port:1;
-    uint8_t atta_stp_t_port:1;
-    uint8_t atta_ssp_t_port:1;
-    uint8_t rsv6:4;
-
-    uint64_t sas_addr;          // byte 8~15
-    uint64_t attached_sas_addr; // byte 16~23
-    uint8_t attached_phy_id;    // byte 24
-    uint8_t rsv7[7];            // byte 25~31
-
-    uint32_t invalid_dword_count;   // 32~35
-    uint32_t running_disparity_error_count;  // 36~39
-    uint32_t loss_dword_synchronization;  // 40~43
-    uint32_t phy_reset_problem;   // 44~47
-    uint16_t resv8;   //48~49
-
-    uint8_t phy_event_descriptor_len;  // 50
-    uint8_t number_phy_event_descriptors; // 51
-
-} __attribute__((packed, aligned(4))) sas_phy_log_descriptor_t;
-
-typedef struct phy_event_descriptor
-{
-    uint16_t reserved0;
-    uint8_t  reserved1;
-    uint8_t  phy_event_source;
-    uint32_t phy_event;
-    uint32_t peak_value_detector_threshold;
-} __attribute__((packed)) phy_event_descriptor_t;
-
 /***
  * get the scsi-id and wwn of another port of current drive.
  * return NULL: not find. (the other port is not connected)
  */
-static SCSIDiskState * get_drive_peer_port(SCSIRequest *req)
+SCSIDiskState * get_drive_peer_port(SCSIDiskState *s)
 {
-    SCSIDevice *d = (SCSIDevice *) req->dev;
+    SCSIDevice *d = (SCSIDevice *)s;
     SCSIBus *bus = scsi_bus_from_device(d);
     uint64_t local_wwn = 0;
     uint64_t port_wwn = 0;
     BusChild *kid;
-    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, req->dev);
 
     local_wwn = s->qdev.wwn;
     port_wwn = s->qdev.port_wwn;
@@ -1237,237 +1172,10 @@ static SCSIDiskState * get_drive_peer_port(SCSIRequest *req)
 static int scsi_disk_emulate_log_sense(SCSIRequest *req, uint8_t *outbuf)
 {
     SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, req->dev);
-    //SCSIDiskReq *r = DO_UPCAST(SCSIDiskReq, req, req);
-
-    int buflen = 0;
-    uint8_t* ptr = outbuf + 4;
-    //int start;
-    // parse cdb header.
     uint8_t page_code = req->cmd.buf[2] & 0x3f;
     uint8_t subpage_code = req->cmd.buf[3];
     uint16_t parameter_pointer = (req->cmd.buf[5] << 8) + req->cmd.buf[6];
-    uint16_t allocation_len = (req->cmd.buf[7] << 8) + req->cmd.buf[8];
-    //uint8_t control = req->cmd.buf[9];
-    //uint8_t sp = req->cmd.buf[1] & 0x1;
-    //uint16_t page_len;
-
-#define FILL_UL(p,a,b,c,d)  *((uint32_t*)p) = (d << 24) | (c << 16) | (b << 8) | a; p+=4
-
-    buflen = allocation_len;
-
-    switch (page_code) {
-    case 0: // page 0, a page code list.
-        if (subpage_code == 0x0) {
-            *ptr++ = 0;
-            *ptr++ = 0x11;   // Specific device.
-            *ptr++ = 0x18;   // Protocol Specific port
-            *ptr++ = 0x2f;   // Information Exceptions.
-            break;
-        }
-        if (subpage_code == 0xff) {
-            FILL_UL(ptr, 0, 0, 0, 0);
-            FILL_UL(ptr, 0x11, 0, 0x11, 0xff);
-            FILL_UL(ptr, 0x18, 0, 0x18, 0xff);
-            FILL_UL(ptr, 0x2f, 0, 0x2f, 0xff);
-            break;
-        }
-        buflen = -1;
-        break;
-    case 0x11:
-        if (subpage_code == 0) {
-            if (fill_log_parameter_header(&ptr, parameter_pointer, 1, 0, 0, 0, 0, 3, 4) != 0)
-                break;
-            FILL_UL(ptr, 0, 0, 0, 0);
-            break;
-        }
-        if (subpage_code == 0xff) {
-            FILL_UL(ptr, 0x11, 0, 0x11, 0xff);
-            break;
-        }
-        buflen = -1;
-        break;
-    case 0x18:
-        if (subpage_code == 0) {
-            SCSIDiskState *another_port = NULL;
-            sas_phy_log_descriptor_t* header = NULL;
-            phy_event_descriptor_t* ptr_event_descriptor = NULL;
-            if (parameter_pointer > 2) {
-                buflen = -1;
-                break;
-            }
-            if (fill_log_parameter_header(&ptr, parameter_pointer, 1, 0, 0, 0, 0, 3, 0x68) == 0) {
-                ptr = fill_log_parameter_protocol_specific_port_log_header(ptr, PROTOCOL_STANDARD_SPL, 0xa, 1);
-                header = (sas_phy_log_descriptor_t*) ptr;
-                header->phy_id = (uint8_t)(s->port_index - 1);
-                header->sas_phy_log_desc_len = 0x60;
-                header->attached_device_type = 0x2;
-                header->atta_reason = 0;
-                header->negotiated_logic_link_rate = 0xb;
-                header->reason = 0;
-                header->atta_smp_i_port = 1;
-                header->atta_stp_i_port = 0;
-                header->atta_ssp_i_port = 0;
-
-                header->atta_smp_t_port = 1;
-                header->atta_stp_t_port = 0;
-                header->atta_ssp_t_port = 0;
-
-                header->sas_addr = bswap64(s->qdev.port_wwn);
-                header->attached_sas_addr = bswap64(s->attached_wwn);
-                header->attached_phy_id = s->attached_phy_id;
-                header->invalid_dword_count = bswap32(12);
-                header->running_disparity_error_count = bswap32(12);
-                header->loss_dword_synchronization = bswap32(27);
-                header->phy_reset_problem = bswap32(0);
-                header->phy_event_descriptor_len = 12;
-                header->number_phy_event_descriptors = 4;
-                // fill with fake events.
-                ptr_event_descriptor = (phy_event_descriptor_t*) (header + 1);
-                ptr_event_descriptor->phy_event_source = 1;
-                ptr_event_descriptor->phy_event = bswap32(0xc);
-                ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
-                ptr_event_descriptor++;
-                ptr_event_descriptor->phy_event_source = 2;
-                ptr_event_descriptor->phy_event = bswap32(0xc);
-                ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
-                ptr_event_descriptor++;
-
-                ptr_event_descriptor->phy_event_source = 3;
-                ptr_event_descriptor->phy_event = bswap32(0x1b);
-                ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
-                ptr_event_descriptor++;
-                ptr_event_descriptor->phy_event_source = 4;
-                ptr_event_descriptor->phy_event = bswap32(0x0);
-                ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
-                ptr_event_descriptor++;
-
-                ptr = (uint8_t*) ptr_event_descriptor;
-            }
-            another_port = get_drive_peer_port(req);
-            if (another_port == NULL) {
-                // break if it can't find information of another port.
-                if (parameter_pointer >= 2)
-                    buflen = -1;
-                break;
-            }
-            if (fill_log_parameter_header(&ptr, parameter_pointer, 2, 0, 0, 0, 0, 3,
-                            sizeof(sas_phy_log_descriptor_t) + 4 * sizeof(phy_event_descriptor_t) + 8 - 4) == 0) {
-                ptr = fill_log_parameter_protocol_specific_port_log_header(ptr, PROTOCOL_STANDARD_SPL, 0xa, 1);
-
-                header = (sas_phy_log_descriptor_t*) ptr;
-                header->phy_id = (uint8_t)(another_port->port_index - 1);
-                header->sas_phy_log_desc_len = sizeof(sas_phy_log_descriptor_t) + 4 * sizeof(phy_event_descriptor_t) - 4; //0x60;
-                header->attached_device_type = 0x2;
-                header->atta_reason = 0;
-                header->negotiated_logic_link_rate = 0xb;
-                header->reason = 0;
-                header->atta_smp_i_port = 1;
-                header->atta_stp_i_port = 0;
-                header->atta_ssp_i_port = 0;
-
-                header->atta_smp_t_port = 1;
-                header->atta_stp_t_port = 0;
-                header->atta_ssp_t_port = 0;
-
-                header->sas_addr = bswap64(another_port->qdev.wwn);
-                header->attached_sas_addr = bswap64(another_port->attached_wwn);
-                header->attached_phy_id = another_port->attached_phy_id;
-                header->invalid_dword_count = bswap32(8);
-                header->running_disparity_error_count = bswap32(8);
-                header->loss_dword_synchronization = bswap32(8);
-                header->phy_reset_problem = bswap32(0);
-                header->phy_event_descriptor_len = 12;
-                header->number_phy_event_descriptors = 4;
-                // fill with fake events.
-                ptr_event_descriptor = (phy_event_descriptor_t*) (header + 1);
-                ptr_event_descriptor->phy_event_source = 1;
-                ptr_event_descriptor->phy_event = bswap32(8);
-                ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
-                ptr_event_descriptor++;
-                ptr_event_descriptor->phy_event_source = 2;
-                ptr_event_descriptor->phy_event = bswap32(8);
-                ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
-                ptr_event_descriptor++;
-
-                ptr_event_descriptor->phy_event_source = 3;
-                ptr_event_descriptor->phy_event = bswap32(8);
-                ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
-                ptr_event_descriptor++;
-                ptr_event_descriptor->phy_event_source = 4;
-                ptr_event_descriptor->phy_event = bswap32(0x0);
-                ptr_event_descriptor->peak_value_detector_threshold = bswap32(0);
-                ptr_event_descriptor++;
-
-                ptr = (uint8_t*) ptr_event_descriptor;
-            }
-            break;
-        }
-        if (subpage_code == 0xff) {
-            FILL_UL(ptr, 0x18, 0, 0x18, 0xff);
-            break;
-        }
-        buflen = -1;
-        break;
-    case 0x2f:
-        if (subpage_code == 0) {
-            // fill ADDITIONAL SENSE CODE, ADDITIONAL SENSE CODE QUALIFIER, MOST RECENT TEMPERATURE READING, Vendor specific 0
-#define FILL_EXECPTION_HEADER(p, sense_code, qualifier, temperature, vendor_specific) \
-               *p++ = sense_code; *p++ = qualifier; *p++ = temperature; *p++ = vendor_specific;
-
-            if (fill_log_parameter_header(&ptr, parameter_pointer, 0, 0, 0, 0, 0, 3, 8) == 0) {
-                FILL_EXECPTION_HEADER(ptr, 0, 0, 0x1f, 0x46);
-                FILL_UL(ptr, 0x25, 0, 0, 0);
-            }
-
-            if (fill_log_parameter_header(&ptr, parameter_pointer, 1, 0, 0, 0, 0, 3, 4) == 0) {
-                FILL_EXECPTION_HEADER(ptr, 0x5d, 0x53, 0, 0);
-            }
-
-            if (fill_log_parameter_header(&ptr, parameter_pointer, 2, 0, 0, 0, 0, 3, 4) == 0) {
-                FILL_EXECPTION_HEADER(ptr, 0x5d, 0x54, 0, 0);
-            }
-
-            if (fill_log_parameter_header(&ptr, parameter_pointer, 3, 0, 0, 0, 0, 3, 4) == 0) {
-                FILL_EXECPTION_HEADER(ptr, 0x5d, 0x57, 0, 0);
-            }
-
-            if (fill_log_parameter_header(&ptr, parameter_pointer, 4, 0, 0, 0, 0, 3, 4) == 0) {
-                FILL_EXECPTION_HEADER(ptr, 0x5d, 0x28, 0, 0);
-            }
-
-            if (fill_log_parameter_header(&ptr, parameter_pointer, 5, 0, 0, 0, 0, 3, 4) == 0) {
-                FILL_EXECPTION_HEADER(ptr, 0x0b, 0x06, 0, 0);
-            }
-
-            if (fill_log_parameter_header(&ptr, parameter_pointer, 6, 0, 0, 0, 0, 3, 4) == 0) {
-                FILL_EXECPTION_HEADER(ptr, 0x5d, 0x56, 0x3, 0);
-            }
-
-            if (fill_log_parameter_header(&ptr, parameter_pointer, 7, 0, 0, 0, 0, 3, 4) == 0) {
-                FILL_EXECPTION_HEADER(ptr, 0x5d, 0x55, 0, 0);
-            }
-
-            if (fill_log_parameter_header(&ptr, parameter_pointer, 8, 0, 0, 0, 0, 3, 4) == 0) {
-                FILL_EXECPTION_HEADER(ptr, 0x5d, 0x20, 0, 0);
-            }
-#undef FILL_EXECPTION_HEADER
-            if (parameter_pointer > 9)
-                buflen = -1;
-            break;
-        }
-        if (subpage_code == 0xff) {
-            FILL_UL(ptr, 0x2f, 0, 0x2f, 0xff);
-            break;
-        }
-        buflen = -1;
-        break;
-    default:
-        buflen = -1;
-        break;
-    }
-
-    fill_log_page_header(outbuf, page_code, subpage_code, ptr - outbuf - 4, 0);
-    return buflen;
+    return get_page_data(s->log_page, outbuf, page_code, subpage_code, parameter_pointer);
 }
 
 /*
@@ -3433,6 +3141,7 @@ static void scsi_hd_realize(SCSIDevice *dev, Error **errp)
             s->page_buffer = 0;
         }
     }
+    s->log_page = prepare_log_sense_page(s);
     scsi_realize(&s->qdev, errp);
 }
 
@@ -3820,6 +3529,32 @@ static bool scsi_block_is_passthrough(SCSIDiskState *s, uint8_t *buf)
     }
 
     return true;
+}
+
+void qmp_scsi_drive_error_inject_life_used(const char *id, const char *type, ActionMode action, uint8_t val, Error **errp)
+{
+    char *root_path = object_get_canonical_path(container_get(qdev_get_machine(), "/peripheral"));
+    char *path = g_strdup_printf("%s/%s", root_path, id);
+
+    g_free(root_path);
+
+    Object *obj = object_resolve_path_type(path, TYPE_DEVICE, NULL);
+    g_free(path);
+
+    if (!obj) {
+        error_set(errp, ERROR_CLASS_DEVICE_NOT_FOUND,
+                           "Device '%s' not found", id);
+        return;
+    }
+
+    if (object_dynamic_cast(obj, "scsi-hd")) {
+        SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, SCSI_DEVICE(obj));
+        dispatch_error_inject_request(s->log_page, type, action, val, errp);
+    } else {
+        error_setg(errp, "Id %s is not a valid scsi-hd device", id);
+        return;
+    }
+
 }
 
 

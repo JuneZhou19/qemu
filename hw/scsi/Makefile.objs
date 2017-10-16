@@ -1,4 +1,4 @@
-common-obj-y += scsi-disk.o
+common-obj-y += scsi-disk.o scsi-drive-logpage.o
 common-obj-y += scsi-generic.o scsi-bus.o
 common-obj-y += ses.o eses.o eses_vphy.o
 common-obj-$(CONFIG_LSI_SCSI_PCI) += lsi53c895a.o

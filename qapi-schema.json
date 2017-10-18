@@ -6589,3 +6589,8 @@
   'data': [ 'add', 'remove', 'modify' ] }
 
 {'command': 'scsi-drive-error-inject-life-used', 'data': { 'id': 'str', 'type': 'str', 'action':'ActionMode', 'val': 'uint8'}}
+
+{ 'enum': 'ErrorType',
+  'data': [ 'check-condition', 'condition-met', 'busy', 'reservation-conflict','task-set-full', 'aca-active','task-aborted'] }
+
+{'command': 'scsi-status-code-error-inject', 'data': { 'id': 'str', 'error_type':'ErrorType', 'count': 'uint32'}}

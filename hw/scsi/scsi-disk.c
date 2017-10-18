@@ -128,6 +128,10 @@ typedef struct SCSIDiskState
     uint64_t attached_wwn;
 } SCSIDiskState;
 
+uint8_t scsi_status_list[]={ CHECK_CONDITION, CONDITION_GOOD, BUSY,
+                            RESERVATION_CONFLICT, TASK_SET_FULL,
+                            ACA_ACTIVE, TASK_ABORTED};
+
 static int scsi_handle_rw_error(SCSIDiskReq *r, int error, bool acct_failed);
 static void scsi_hd_set_drive_defect(DeviceState *dev, const char *type, uint32_t defect_count, Error **errp);
 static DriveDefectList *scsi_hd_get_drive_defect(DeviceState *dev, const char *type, Error **errp);
@@ -410,6 +414,7 @@ static void scsi_read_data(SCSIRequest *req)
     SCSIDiskReq *r = DO_UPCAST(SCSIDiskReq, req, req);
     SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, r->req.dev);
     bool first;
+
 
     DPRINTF("Read sector_count=%d\n", r->sector_count);
     if (r->sector_count == 0) {
@@ -2886,6 +2891,16 @@ static int32_t scsi_disk_dma_command(SCSIRequest *req, uint8_t *buf)
 
     command = buf[0];
 
+    if(atomic_read(&s->scsi_status_error.error_type)){
+        scsi_req_complete(&r->req, atomic_read(&s->scsi_status_error.error_type));
+        if(atomic_read(&s->scsi_status_error.count) > 0) {
+            atomic_sub(&s->scsi_status_error.count, 1);
+        }else if(atomic_read(&s->scsi_status_error.count) == 0) {
+            atomic_set(&s->scsi_status_error.error_type, 0);
+        }
+        return 0; //0 means does not transfer any data
+    }
+
     if (!blk_is_available(s->qdev.conf.blk)) {
         scsi_check_condition(r, SENSE_CODE(NO_MEDIUM));
         return 0;
@@ -3531,8 +3546,8 @@ static bool scsi_block_is_passthrough(SCSIDiskState *s, uint8_t *buf)
     return true;
 }
 
-void qmp_scsi_drive_error_inject_life_used(const char *id, const char *type, ActionMode action, uint8_t val, Error **errp)
-{
+static SCSIDiskState *find_scsi_disk(const char *id, Error **errp){
+
     char *root_path = object_get_canonical_path(container_get(qdev_get_machine(), "/peripheral"));
     char *path = g_strdup_printf("%s/%s", root_path, id);
 
@@ -3544,11 +3559,19 @@ void qmp_scsi_drive_error_inject_life_used(const char *id, const char *type, Act
     if (!obj) {
         error_set(errp, ERROR_CLASS_DEVICE_NOT_FOUND,
                            "Device '%s' not found", id);
-        return;
+        return NULL;
     }
 
     if (object_dynamic_cast(obj, "scsi-hd")) {
-        SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, SCSI_DEVICE(obj));
+        return DO_UPCAST(SCSIDiskState, qdev, SCSI_DEVICE(obj));
+    }else{
+        return NULL;
+    }
+}
+void qmp_scsi_drive_error_inject_life_used(const char *id, const char *type, ActionMode action, uint8_t val, Error **errp)
+{
+    SCSIDiskState *s = find_scsi_disk(id, errp);
+    if(s) {
         dispatch_error_inject_request(s->log_page, type, action, val, errp);
     } else {
         error_setg(errp, "Id %s is not a valid scsi-hd device", id);
@@ -3557,6 +3580,19 @@ void qmp_scsi_drive_error_inject_life_used(const char *id, const char *type, Act
 
 }
 
+void qmp_scsi_status_code_error_inject(const char *id, ErrorType error_type, uint32_t count, Error **errp)
+{
+    SCSIDiskState *s = find_scsi_disk(id,errp);
+    if(s){
+        if(error_type < ERROR_TYPE__MAX){
+            atomic_set(&s->scsi_status_error.error_type, scsi_status_list[error_type]);
+            atomic_set(&s->scsi_status_error.count, count);
+        }else{
+            error_setg(errp, "not valid error type %d", error_type);
+        }
+    }
+    return;
+}
 
 static int32_t scsi_block_dma_command(SCSIRequest *req, uint8_t *buf)
 {

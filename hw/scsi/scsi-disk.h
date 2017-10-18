@@ -11,6 +11,8 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "hw/scsi/scsi.h"
+#include "block/scsi.h"
+#include "qapi-types.h"
 
 typedef struct SCSIDiskReq {
     SCSIRequest req;
@@ -23,6 +25,12 @@ typedef struct SCSIDiskReq {
     QEMUIOVector qiov;
     BlockAcctCookie acct;
 } SCSIDiskReq;
+
+typedef struct SCSIStatusError
+{
+    ErrorType error_type; //BUSY CHECK_CONDITION ABORT ACA
+    uint32_t count;
+}SCSIStatusError;
 
 typedef struct SCSIDiskState SCSIDiskState;
 struct SCSIDiskState
@@ -51,6 +59,7 @@ struct SCSIDiskState
     uint8_t  attached_phy_id;
     uint64_t attached_wwn;
     uint8_t* log_page;
+    SCSIStatusError scsi_status_error;
 };
 
 SCSIDiskState * get_drive_peer_port(SCSIDiskState *s);

@@ -63,7 +63,7 @@ struct SCSIDiskState
 };
 
 SCSIDiskState * get_drive_peer_port(SCSIDiskState *s);
-void dispatch_error_inject_request(uint8_t *s_log_page, const char *type, ActionMode action, uint8_t val, Error **error);
+void dispatch_error_inject_request(uint8_t *s_log_page, const char *type, ActionMode action, bool has_parameter, uint16_t parameter, bool has_parameter_length, uint8_t parameter_length, bool has_val, uint64_t val, Error **error);
 uint8_t *prepare_log_sense_page(SCSIDiskState *s);
 int get_page_data(uint8_t *s_log_page, uint8_t *buffer, uint8_t page_code, uint8_t subpage_code, uint16_t parameter_pointer);
 #endif

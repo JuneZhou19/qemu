@@ -3568,11 +3568,12 @@ static SCSIDiskState *find_scsi_disk(const char *id, Error **errp){
         return NULL;
     }
 }
-void qmp_scsi_drive_error_inject_life_used(const char *id, const char *type, ActionMode action, uint8_t val, Error **errp)
+void qmp_scsi_drive_error_inject(const char *id, const char *type, ActionMode action, bool has_parameter, uint16_t parameter, bool has_parameter_length, uint8_t parameter_length, bool has_val, uint64_t val, Error **errp)
 {
     SCSIDiskState *s = find_scsi_disk(id, errp);
+
     if(s) {
-        dispatch_error_inject_request(s->log_page, type, action, val, errp);
+        dispatch_error_inject_request(s->log_page, type, action, has_parameter, parameter, has_parameter_length, parameter_length, has_val, val, errp);
     } else {
         error_setg(errp, "Id %s is not a valid scsi-hd device", id);
         return;

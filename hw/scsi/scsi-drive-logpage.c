@@ -21,20 +21,21 @@
 
 /*************************************************************************************/
 #define PAGE_NUMBER (sizeof(page_support)/sizeof(page_contain_t))
-#define PAGE_SIZE (1024)
-#define SOLID_STATE_MEDIA_OARAMETER_SIZE 8
-
+#define PAGE_SIZE (2048)
+#define SUBPAGE_HEAD_SIZE 4
+#define PARAMETER_HEAD_SIZE 4
 typedef struct error_inject_descriptor {
     const char *page_type;
     uint32_t page_code;
     uint32_t subpage_code;
     uint32_t parameter_code;
+    uint8_t parameter_length;
     char *value;
 }error_inject_descriptor_t;
 
 error_inject_descriptor_t error_inject_map[] = {
-                    {"life_used", 0x11, 0x00, 0x0001, 0},
-                    {"erase_count", 0x31, 0x00, 0x8000, 0}
+                    {"life_used", 0x11, 0x00, 0x0001, 4, 0},
+                    {"erase_count", 0x31, 0x00, 0x8000, 8, 0}
                     };
 
 
@@ -49,7 +50,8 @@ page_contain_t page_support[] = {
     { 0, 0xFF, NULL},
     { 0x11, 0x00, NULL},
     { 0x18, 0x00, NULL},
-    { 0x2f, 0x00, NULL}
+    { 0x2f, 0x00, NULL},
+    { 0x31, 0x00, NULL}
 };
 
 // refer to SAS2r16.pdf, Chapter 10.2.8 SCSI log parameters
@@ -391,56 +393,73 @@ static bool find_page_subpage_index(uint32_t *index, uint8_t page_code, uint8_t 
     
 
 }
-static bool find_parameter_offset_in_subpage(uint8_t *log_page, uint16_t parameter_code, uint8_t parameter_size, uint8_t **parameter_offset)
+static bool find_parameter_offset_in_subpage(uint8_t *log_page, uint16_t parameter_code, uint8_t **parameter_offset)
 {
-    uint32_t i;
+    uint32_t parameter_length;
     uint32_t length = (log_page[2]<<8) + log_page[3];
-    if(length==0 || (length % parameter_size!=0))
+    if(!length)
         return false;
-    uint32_t try = length / parameter_size;
-    log_page += 4; //skip 4 bytes page head
-    for(i=0; i<try; i++){
+    log_page += SUBPAGE_HEAD_SIZE; //skip 4 bytes page head
+    uint8_t *start_log_page = log_page;
+
+    while(1){
         if(((log_page[0]<<8) + log_page[1]) == parameter_code){
             *parameter_offset = log_page;
             return true;
         }
-        log_page += parameter_size;
+        parameter_length = log_page[3];
+        log_page += parameter_length + PARAMETER_HEAD_SIZE;
+        if ((log_page - start_log_page) >= length)
+            break;
     }
 
     return false; 
 }
 
 /*Change log page by qmp*/
-static bool modify_percentage_used_endurance_inicator(uint8_t *log_page, uint32_t parameter_code, uint8_t val)
+static bool modify_log_parameters(uint8_t *log_subpage, uint32_t parameter_code, uint64_t val)
 {
     uint8_t *parameter_offset;
-    if (!find_parameter_offset_in_subpage(log_page, parameter_code, SOLID_STATE_MEDIA_OARAMETER_SIZE, &parameter_offset))
+    if (!find_parameter_offset_in_subpage(log_subpage, parameter_code, &parameter_offset))
         return false;
-
-    parameter_offset[7] = val;
+    uint16_t parameter_length = parameter_offset[3];
+    parameter_offset +=parameter_length + PARAMETER_HEAD_SIZE -1; //point to the end of parameter.
+    while(parameter_length--) {
+        *parameter_offset-- = val & 0xff;
+        val >>= 8;
+    }
     return true;
 }
 
-static bool add_or_remove_solid_state_media_log_parameters(uint8_t *solid_page, uint16_t parameter_code, uint8_t val, bool is_add)
+static bool add_log_parameters(uint8_t *log_subpage, uint16_t parameter_code, uint8_t parameter_length, uint64_t val)
 {
-    uint32_t page_length=0;
-    uint32_t length = (solid_page[2]<<8) + solid_page[3];
-    if(is_add){
-        page_length += 4; //add 4 bytes head
-        uint8_t *p_solid_parameter = &solid_page[page_length]; //point to the END of Solid state media parameters in page.
-        fill_log_parameter_header(&p_solid_parameter, parameter_code, 0,0,0,0,3,4);
-        p_solid_parameter[3] = val;  //PERCENTAGE USED ENDURANCE INDICATOR
-        solid_page[2] = ((length + 8) << 8) & 0xff;
-        solid_page[3] = (length + 8) & 0xff;
+    uint32_t length = (log_subpage[2]<<8) + log_subpage[3];
+    log_subpage[2] = ((length + parameter_length + PARAMETER_HEAD_SIZE) << 8) & 0xff;
+    log_subpage[3] = (length + parameter_length + PARAMETER_HEAD_SIZE) & 0xff;
 
-    }else{
-        // reset all solid state media parameter filed to 0.
-        memset((solid_page + 4), 0, length);
-        // reset page length to 0, which means there is no valid solid state media parameter.
-        solid_page[2] = 0;
-        solid_page[3] = 0;
+    uint8_t *p_parameter = &log_subpage[SUBPAGE_HEAD_SIZE + length]; //point to the end+1 of parameters in subpage.
+    //Fill the parameter head : 4 bytes
+    fill_log_parameter_header(&p_parameter, parameter_code, 0,0,0,0,3,parameter_length);
+    p_parameter = p_parameter + parameter_length - 1; //point to the End of parameter
+
+    //Fill the parameters body of length : parameter_length
+    uint8_t i = parameter_length;
+    while(i--) {
+        *p_parameter-- = val & 0xff;
+        val >>= 8;
     }
     return true;
+}
+
+static void remove_log_parameters(uint8_t *log_subpage)
+{
+
+    uint32_t length = (log_subpage[2]<<8) + log_subpage[3];
+    // reset all solid state media parameter filed to 0.
+    memset((log_subpage + SUBPAGE_HEAD_SIZE), 0, length); // 4 bytes head
+    // reset page length to 0, which means there is no valid solid state media parameter.
+    log_subpage[2] = 0;
+    log_subpage[3] = 0;
 }
 
 static uint8_t *find_start_of_subpage(uint8_t *s_log_page, uint8_t page_code, uint8_t subpage_code)
@@ -452,11 +471,14 @@ static uint8_t *find_start_of_subpage(uint8_t *s_log_page, uint8_t page_code, ui
     return &s_log_page[index*PAGE_SIZE];
 
 }
-void dispatch_error_inject_request(uint8_t *s_log_page, const char *type, ActionMode action, uint8_t val, Error **errp)
+void dispatch_error_inject_request(uint8_t *s_log_page, const char *type, ActionMode action, bool has_parameter, uint16_t parameter, bool has_parameter_length, uint8_t parameter_length, bool has_val, uint64_t val, Error **errp)
 {
     error_inject_descriptor_t *current_d = NULL;
     current_d = find_map_by_type(type);
     if (!current_d) goto error_out;
+
+    uint16_t parameter_code = has_parameter ? parameter : current_d->parameter_code;
+    uint8_t parameter_length_inuse = has_parameter_length ? parameter_length : current_d->parameter_length;
 
     /* Percentage Used Endurance Indicator log parameter format is
      defined in sbc4r14 Table225 */
@@ -464,25 +486,32 @@ void dispatch_error_inject_request(uint8_t *s_log_page, const char *type, Action
     uint8_t *log_page = find_start_of_subpage(s_log_page, current_d->page_code, current_d->subpage_code);
     if(!log_page) return;
 
-    if (!strcmp(type, "life_used")){
-        switch(action){
-            case ACTION_MODE_ADD:
-            case ACTION_MODE_REMOVE:
-                add_or_remove_solid_state_media_log_parameters(log_page, current_d->parameter_code, val, (action == ACTION_MODE_ADD) ? true:false);
-                break;
-            case ACTION_MODE_MODIFY:
-                modify_percentage_used_endurance_inicator(log_page, current_d->parameter_code, val);
-                break;
-            default:
-                break;
-        }
-        return;
+    switch(action){
+        case ACTION_MODE_ADD:
+            if(!has_val) {
+                 error_setg(errp, "please set the val\n");
+                 return;
+            }
+            add_log_parameters(log_page, parameter_code, parameter_length_inuse, val);
+            break;
+        case ACTION_MODE_REMOVE:
+            remove_log_parameters(log_page);
+            break;
+        case ACTION_MODE_MODIFY:
+            if(!has_val) {
+                 error_setg(errp, "please set the val\n");
+                 return;
+            }
+            if(!modify_log_parameters(log_page, parameter_code, val))
+                error_setg(errp, "failed to find parameter code %x\n", parameter_code);
+            break;
+        default:
+            goto error_out;
     }
-    else
-        goto error_out;
+    return;
 
 error_out:
-    error_setg(errp, "fail to found error type %s\n", type);
+    error_setg(errp, "failed to find error type %s\n", type);
     return;
 
 }

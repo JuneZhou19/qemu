@@ -6588,7 +6588,7 @@
 { 'enum': 'ActionMode',
   'data': [ 'add', 'remove', 'modify' ] }
 
-{'command': 'scsi-drive-error-inject-life-used', 'data': { 'id': 'str', 'type': 'str', 'action':'ActionMode', 'val': 'uint8'}}
+{'command': 'scsi-drive-error-inject', 'data': { 'id': 'str', 'type': 'str', 'action':'ActionMode', '*parameter':'uint16','*parameter_length':'uint8','*val': 'uint64'}}
 
 { 'enum': 'ErrorType',
   'data': [ 'check-condition', 'condition-met', 'busy', 'reservation-conflict','task-set-full', 'aca-active','task-aborted'] }

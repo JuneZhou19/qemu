@@ -37,6 +37,9 @@ static void scsi_ses_free_buffer(char **ptr_scsi_buffer);
 
 static void scsi_free_request(SCSIRequest *req)
 {
+    SCSISESReq *r = DO_UPCAST(SCSISESReq, req, req);
+
+    qemu_vfree(r->iov.iov_base);
 }
 
 /* Helper function for command completion with sense.  */

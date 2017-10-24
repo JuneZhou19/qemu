@@ -12,6 +12,7 @@
 #include "qapi/error.h"
 #include "hw/scsi/scsi.h"
 #include "block/scsi.h"
+#include "block/drive-defect.h"
 #include "qapi-types.h"
 
 typedef struct SCSIDiskReq {
@@ -56,6 +57,7 @@ struct SCSIDiskState
     bool format_in_progress;
     char *page_file;
     uint8_t* page_buffer;
+    struct DriveDefectDescriptor drive_defect_desc;
     uint8_t  attached_phy_id;
     uint64_t attached_wwn;
     uint8_t* log_page;

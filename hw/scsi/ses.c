@@ -1063,8 +1063,6 @@ static int32_t scsi_ses_emulate_command(SCSIRequest *req, uint8_t *buf)
     case SEND_DIAGNOSTIC:
         break;
     case READ_BUFFER:
-<<<<<<< HEAD
-=======
         if (s->ses_buffer_file) {
             if(s->ses_buffer_checksum) {
                 buflen = scsi_ses_read_buffer(req, outbuf);
@@ -1081,7 +1079,6 @@ static int32_t scsi_ses_emulate_command(SCSIRequest *req, uint8_t *buf)
             goto illegal_request;
         }
         r->buflen = buflen;
->>>>>>> 5686037... Refect read buffer
         break;
     default:
         DPRINTF("Unknown SCSI command (%2.2x=%s)\n", buf[0],

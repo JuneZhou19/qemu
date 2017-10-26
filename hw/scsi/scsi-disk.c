@@ -82,6 +82,7 @@ typedef struct SCSIDiskClass {
 #define INQUIRY_PAGE 0
 #define MODE_PAGE 1
 
+#if 0
 typedef struct SCSIDiskReq {
     SCSIRequest req;
     /* Both sector and sector_count are in terms of qemu 512 byte blocks.  */
@@ -95,11 +96,13 @@ typedef struct SCSIDiskReq {
     BlockAcctCookie acct;
     unsigned char *status;
 } SCSIDiskReq;
+#endif
 
 #define SCSI_DISK_F_REMOVABLE             0
 #define SCSI_DISK_F_DPOFUA                1
 #define SCSI_DISK_F_NO_REMOVABLE_DEVOPS   2
 
+#if 0
 typedef struct SCSIDiskState
 {
     SCSIDevice qdev;
@@ -127,6 +130,7 @@ typedef struct SCSIDiskState
     uint8_t  attached_phy_id;
     uint64_t attached_wwn;
 } SCSIDiskState;
+#endif
 
 uint8_t scsi_status_list[]={ CHECK_CONDITION, CONDITION_GOOD, BUSY,
                             RESERVATION_CONFLICT, TASK_SET_FULL,
@@ -1849,7 +1853,7 @@ static void *format_unit_processing(void *opaque)
         sleep_usecs = s->format_time_emulation * 60 * 1000 * 1000 / ((s->qdev.max_lba + 1) / FORMAT_WRITE_SIZE);
     }
 
-    atomic_set(&s->progress, 0);
+    atomic_set((typeof(s->progress) *)&s->progress, 0);
     if (immed) {
         scsi_req_complete(&r->req, GOOD);
     }

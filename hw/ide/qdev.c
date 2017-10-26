@@ -34,7 +34,6 @@
 
 static char *idebus_get_fw_dev_path(DeviceState *dev);
 static void idebus_unrealize(BusState *qdev, Error **errp);
-static void ide_hd_set_drive_defect(DeviceState *dev, const char *type, int defect_count, Error **errp);
 static void ide_hd_set_drive_defect(DeviceState *dev, const char *type, uint32_t defect_count, Error **errp);
 static DriveDefectList *ide_hd_get_drive_defect(DeviceState *dev, const char *type, Error **errp);
 

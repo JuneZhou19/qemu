@@ -26,8 +26,8 @@
 #define INVALID_TMSDT_INDEX         MAX_DEVICES_PER_SAS_PORT
 #define INDEX_BIT_MASK  0xFFFF
 
-#define TERMINATOR_EMC_PAGE_NUM_INFO_ELEM_GROUPS        3
-#define TERMINATOR_EMC_PAGE_NUM_TRACE_BUF_INFO_ELEMS    2
+#define TERMINATOR_EMC_PAGE_NUM_INFO_ELEM_GROUPS        6
+#define TERMINATOR_EMC_PAGE_NUM_TRACE_BUF_INFO_ELEMS    8
 
 /*******************************************************************
  *
@@ -512,6 +512,7 @@ typedef enum fbe_eses_const_e
     FBE_ESES_EMC_CONTROL_GENERAL_INFO_ELEM_SIZE = 4,
     FBE_ESES_EMC_CTRL_STAT_PS_INFO_ELEM_SIZE = 5,
     FBE_ESES_EMC_CTRL_STAT_SPS_INFO_ELEM_SIZE = 6,
+    FBE_ESES_EMC_CTRL_STAT_DRIVE_SLED_SLOT_ELEM_SIZE = 23,
     FBE_ESES_EMC_CTRL_STAT_ENCL_TIME_ZONE_UNSPECIFIED = 96,
     FBE_ESES_EMC_CTRL_STAT_INFO_ELEM_GROUP_HEADER_SIZE = 3,
 #if 0
@@ -943,7 +944,8 @@ typedef enum
     FBE_ESES_INFO_ELEM_TYPE_GENERAL,
     FBE_ESES_INFO_ELEM_TYPE_DRIVE_POWER,
     FBE_ESES_INFO_ELEM_TYPE_PS,
-    FBE_ESES_INFO_ELEM_TYPE_SPS
+    FBE_ESES_INFO_ELEM_TYPE_SPS,
+	FBE_ESES_INFO_ELEM_TYPE_DRIVE_SLED
 } fbe_eses_info_elem_type_t;
 
 // defines for expander reset reason.
@@ -1227,6 +1229,53 @@ typedef struct ses_general_info_elem_expander_s
 
 SIZE_CHECK(ses_general_info_elem_expander_struct, 4);
 
+
+/***********************************
+ * General Information Element for Temperature Sensor
+ */
+typedef struct ses_general_info_elem_temperature_sensor_s
+{
+    fbe_u8_t elem_index;      // Byte 0
+    fbe_u8_t valid:1;         // Byte 1, bit 0
+    fbe_u8_t reserved1:6;     // Byte 1, bit 1-6
+    fbe_u8_t fru:1;           // Byte 1, bit 7
+    fbe_u16_t temperature;    // Byte 2-3;
+}ses_general_info_elem_temperature_sensor_struct;
+
+
+/***********************************
+ * General Information Enclosure Element
+ */
+typedef struct ses_general_info_elem_enclosure_s
+{
+    fbe_u8_t elem_index;               // Byte 0
+    fbe_u8_t usb_led:3;                // Byte 1, bit 0-2
+    fbe_u8_t resume_from_fault:1;      // Byte 1, bit 3
+    fbe_u8_t reserved1:3;              // Byte 1, bit 4-6
+    fbe_u8_t fru:1;                    // Byte 1, bit 7
+    fbe_u16_t reserved2;               // Byte 2-3;
+}ses_general_info_elem_enclosure_struct;
+
+
+#define TWI0_FAULT     (1<<8)
+#define TWI1_FAULT     (1<<9)
+#define TWI2_FAULT     (1<<10)
+#define TWI3_FAULT     (1<<11)
+#define TWI8_FAULT     (1<<0)
+#define TWI9_FAULT     (1<<1)
+/************************************
+ * General Information ESC (Enclosure Services Controller)
+ */
+typedef struct ses_general_info_elem_esc_s
+{
+    fbe_u8_t elem_index;               // Byte 0
+    fbe_u8_t drive_ecb_fault:1;        // Byte 1, bit 0
+    fbe_u8_t secondary_cdef_fault:1;   // Byte 1, bit 1
+    fbe_u8_t primary_cdef_fault:1;     // Byte 1, bit 2
+    fbe_u8_t sxp_eeprom_valid_rslt:4;  // Byte 1, bit 3-6
+    fbe_u8_t fru:1;                    // Byte 1, bit 7
+    fbe_u16_t twi_fault;               // Byte 2-3;
+}ses_general_info_elem_esc_struct;
 /************************************
  * SAS Connector Information Element 
  ************************************/
@@ -2071,6 +2120,16 @@ typedef struct ses_ps_info_elem_s
     fbe_u16_t   input_power;             // Byte 3-4.
 } ses_ps_info_elem_struct;
 
+typedef struct ses_encl_time_elem_s
+{
+    fbe_u8_t    year: 7;           // Byte 0, bit 0-6
+    fbe_u8_t    valid:1;           // Byte 0, bit 7
+    fbe_u8_t    month;
+    fbe_u8_t    day;
+    fbe_u8_t    time_zone;
+    fbe_u32_t    millisec;
+} ses_encl_time_elem_struct;
+
 /************************************
  * General Information Element Array device slot
  ************************************/
@@ -2266,8 +2325,13 @@ fbe_status_t emc_statistics_stat_page_build_exp_phy_stats(terminator_sas_virtual
 fbe_status_t emc_encl_stat_diag_page_build_sas_conn_inf_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *sas_conn_elem_start_ptr, uint8_t **sas_conn_elem_end_ptr, uint8_t *num_sas_conn_info_elem);
 fbe_status_t emc_encl_stat_diag_page_build_trace_buffer_inf_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *trace_buffer_elem_start_ptr, uint8_t **trace_buffer_elem_end_ptr, uint8_t *num_trace_buffer_info_elem);
 fbe_status_t emc_encl_stat_diag_page_build_general_info_expander_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *general_info_elem_start_ptr, uint8_t **general_info_elem_end_ptr, uint8_t *num_general_info_elem);
+fbe_status_t emc_encl_stat_diag_page_build_general_info_temperature_sensor_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *general_info_elem_start_ptr, uint8_t **general_info_elem_end_ptr, uint8_t *num_general_info_elem);
 fbe_status_t emc_encl_stat_diag_page_build_general_info_drive_slot_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *general_info_elem_start_ptr, uint8_t **general_info_elem_end_ptr, uint8_t *num_general_info_elem);
-fbe_status_t emc_encl_stat_diag_page_build_ps_info_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *ps_info_elem_start_ptr, uint8_t **ps_info_elem_end_ptr, uint8_t *num_ps_info_elem); 
+fbe_status_t emc_encl_stat_diag_page_build_general_info_enclosure_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *general_info_elem_start_ptr, uint8_t **general_info_elem_end_ptr, uint8_t *num_general_info_elem);
+fbe_status_t emc_encl_stat_diag_page_build_general_info_esc_elec_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *general_info_elem_start_ptr, uint8_t **general_info_elem_end_ptr, uint8_t *num_general_info_elem);
+fbe_status_t emc_encl_stat_diag_page_build_encl_time_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *trace_buffer_elem_start_ptr, uint8_t **trace_buffer_elem_end_ptr);
+fbe_status_t emc_encl_stat_diag_page_build_ps_info_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *ps_info_elem_start_ptr, uint8_t **ps_info_elem_end_ptr, uint8_t *num_ps_info_elem);
+fbe_status_t emc_encl_stat_diag_page_build_drive_sled_slot_info_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *ps_info_elem_start_ptr, uint8_t **ps_info_elem_end_ptr, uint8_t *num_ps_info_elem);
 fbe_status_t addl_elem_stat_page_build_stat_descriptors(terminator_sas_virtual_phy_info_t *info, uint8_t *status_elements_start_ptr, uint8_t **status_elements_end_ptr);
 fbe_status_t fbe_terminator_sas_enclosure_get_eses_version_desc(fbe_sas_enclosure_type_t encl_type, uint16_t *eses_version_desc_ptr);
 

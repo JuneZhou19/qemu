@@ -6539,6 +6539,8 @@
 # Since 2.9
 ##
 { 'command': 'query-vm-generation-id', 'returns': 'GuidInfo' }
+
+##
 # @DriveDefect:
 #
 # The struct describes drive defects. Which is currently in CHS system.
@@ -6549,7 +6551,6 @@
 #
 # @sector: Sector, which could be replaced by Offset in the near future.
 ##
-
 { 'struct': 'DriveDefect',
   'data': { 'cylinder': 'uint32',
             'head': 'uint32',
@@ -6585,12 +6586,22 @@
 ##
 { 'command': 'get-drive-defect', 'data': { 'id': 'str', 'type': 'str'}, 'returns': [ 'DriveDefect' ] }
 
+##
+# @ActionMode:
+##
 { 'enum': 'ActionMode',
   'data': [ 'add', 'remove', 'modify' ] }
-
+##
+# @scsi-drive-error-inject:
+##
 {'command': 'scsi-drive-error-inject', 'data': { 'id': 'str', 'type': 'str', 'action':'ActionMode', '*parameter':'uint16','*parameter_length':'uint8','*val': 'uint64'}}
 
+##
+# @ErrorType:
+##
 { 'enum': 'ErrorType',
   'data': [ 'check-condition', 'condition-met', 'busy', 'reservation-conflict','task-set-full', 'aca-active','task-aborted'] }
-
+##
+# @scsi-status-code-error-inject:
+##
 {'command': 'scsi-status-code-error-inject', 'data': { 'id': 'str', 'error_type':'ErrorType', 'count': 'uint32'}}

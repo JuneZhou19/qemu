@@ -22,9 +22,11 @@ typedef struct SCSIDiskReq {
     uint32_t sector_count;
     uint32_t buflen;
     bool started;
+    bool need_fua_emulation;
     struct iovec iov;
     QEMUIOVector qiov;
     BlockAcctCookie acct;
+    unsigned char *status;
 } SCSIDiskReq;
 
 typedef struct SCSIStatusError
@@ -33,8 +35,7 @@ typedef struct SCSIStatusError
     uint32_t count;
 }SCSIStatusError;
 
-typedef struct SCSIDiskState SCSIDiskState;
-struct SCSIDiskState
+typedef struct SCSIDiskState
 {
     SCSIDevice qdev;
     uint32_t features;
@@ -53,7 +54,7 @@ struct SCSIDiskState
     bool tray_locked;
     uint32_t rotation;
     uint64_t format_time_emulation;
-    double progress;
+    int progress;
     bool format_in_progress;
     char *page_file;
     uint8_t* page_buffer;
@@ -62,7 +63,7 @@ struct SCSIDiskState
     uint64_t attached_wwn;
     uint8_t* log_page;
     SCSIStatusError scsi_status_error;
-};
+} SCSIDiskState;
 
 SCSIDiskState * get_drive_peer_port(SCSIDiskState *s);
 void dispatch_error_inject_request(uint8_t *s_log_page, const char *type, ActionMode action, bool has_parameter, uint16_t parameter, bool has_parameter_length, uint8_t parameter_length, bool has_val, uint64_t val, Error **error);

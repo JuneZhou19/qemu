@@ -8,8 +8,7 @@
 #include "ses.h"
 #include "hw/pci/pci.h"
 #include "mpt3sas.h"
-#include "trace-root.h"
-#include "trace/control.h"
+#include "trace.h"
 
 #include "hw/boards.h"  // for current_machine
 
@@ -1907,6 +1906,17 @@ static fbe_status_t terminator_get_downstream_wideport_device_status(
     return(status);
 }
 
+//static fbe_status_t terminator_get_downstream_wideport_sas_address(terminator_sas_virtual_phy_info_t *info, fbe_u8_t side, fbe_u64_t *attached_sas_address)
+//{
+//    *attached_sas_address = ((SCSISESState *)info->ses_dev)->expansion_port_attached_sas_address;
+//    return FBE_STATUS_OK;
+//}
+//
+//static fbe_status_t terminator_get_upstream_wideport_sas_address(terminator_sas_virtual_phy_info_t *info, fbe_u8_t side, fbe_u64_t *attached_sas_address)
+//{
+//    *attached_sas_address = ((SCSISESState *)info->ses_dev)->primary_port_attached_sas_address;
+//    return FBE_STATUS_OK;
+//}
 
 /*!*************************************************************************
 * @fn terminator_get_child_expander_wideport_device_status_by_connector_id(
@@ -3776,6 +3786,7 @@ static fbe_status_t get_start_elem_index_by_config_page_info(terminator_eses_con
     // on magnum DPE and not monitored by the ESES talking EMA.
     return(FBE_STATUS_COMPONENT_NOT_FOUND);
 }
+
 
 /*********************************************************************
 *  config_page_get_start_elem_index_in_stat_page()
@@ -5796,7 +5807,7 @@ static fbe_status_t addl_elem_stat_page_sas_peer_exp_get_sas_address(terminator_
     QTAILQ_FOREACH_REVERSE(kid, &bus->qbus.children, ChildrenHead, sibling){
         DeviceState *qdev = kid->child;
         SCSIDevice *dev = SCSI_DEVICE(qdev);
-        if (dev->type == TYPE_ENCLOSURE && (!local_ses_dev->side) == ((SCSISESState *)dev)->side) {
+        if (dev->type == TYPE_ENCLOSURE && local_ses_dev->side != ((SCSISESState *)dev)->side) {
             *sas_address = dev->wwn + 1;
             DPRINTF("%s:%d get peer sas address 0x%lx side %d\n", __func__, __LINE__, *sas_address, !local_ses_dev->side);
             return FBE_STATUS_OK;
@@ -6678,6 +6689,7 @@ static fbe_status_t addl_elem_stat_page_build_esc_electronics_elements(
             RETURN_ON_ERROR_STATUS;
         }       
         
+#if 0
         // get sas address
         uint16_t scsi_id = (1 + info->side) * max_phys + info->side;
         SCSIDevice *d = NULL;
@@ -6687,6 +6699,8 @@ static fbe_status_t addl_elem_stat_page_build_esc_electronics_elements(
         if ((d = scsi_device_find(bus, 0, scsi_id, 0)) != NULL) {
             esc_elec_exp_phy_desc_ptr->sas_address = bswap64(d->wwn);
         }
+#endif
+        esc_elec_exp_phy_desc_ptr->sas_address = bswap64(((SCSISESState *)(info->ses_dev))->qdev.wwn);
         esc_elec_exp_phy_desc_ptr++;      
     }
     *status_elements_end_ptr = (fbe_u8_t *)esc_elec_exp_phy_desc_ptr;
@@ -6766,13 +6780,17 @@ static fbe_status_t addl_elem_stat_page_build_peer_esc_electronics_elements(
         }       
         
         // get sas address
-        uint16_t scsi_id = (1 + !info->side) * max_phys + !info->side;
-        SCSIDevice *d = NULL;
         SCSISESState *s = (SCSISESState *)info->ses_dev;
         SCSIBus *bus = scsi_bus_from_device((SCSIDevice*)s);
+        BusChild *kid;
 
-        if ((d = scsi_device_find(bus, 0, scsi_id, 0)) != NULL) {
-            esc_elec_exp_phy_desc_ptr->sas_address = bswap64(d->wwn);
+        QTAILQ_FOREACH_REVERSE(kid, &bus->qbus.children, ChildrenHead, sibling){
+            DeviceState *qdev = kid->child;
+            SCSIDevice *dev = SCSI_DEVICE(qdev);
+            if (dev->type == TYPE_ENCLOSURE && info->side != ((SCSISESState *)dev)->side) {
+                esc_elec_exp_phy_desc_ptr->sas_address = bswap64(dev->wwn);
+                break;
+            }
         }
 
         esc_elec_exp_phy_desc_ptr++;      
@@ -6874,14 +6892,17 @@ static fbe_status_t emc_stat_page_sas_conn_info_elem_get_local_elem_index(
 }
 
 static fbe_status_t emc_stat_page_sas_conn_info_elem_get_attach_sas_addr(terminator_sas_virtual_phy_info_t *s, uint8_t position,
+                                                                         SCSISESState *ses_dev,
                                                                          uint8_t conn_elem_index,
                                                                          uint8_t *conn_id,
                                                                          uint64_t *attached_sas_address,
-                                                                         uint8_t *sub_encl_id)
+                                                                         uint8_t *sub_encl_id,
+                                                                         uint8_t *attached_phy_id)
 {
     fbe_status_t status = FBE_STATUS_OK;
     uint8_t max_conns_per_port;
     uint8_t max_conns_per_lcc;
+    uint8_t max_single_lane_port_conn_count;
     fbe_sas_enclosure_type_t encl_type = FBE_SAS_ENCLOSURE_TYPE_INVALID;
     terminator_conn_map_range_t range = CONN_IS_ILLEGAL;
 
@@ -6895,6 +6916,10 @@ static fbe_status_t emc_stat_page_sas_conn_info_elem_get_attach_sas_addr(termina
         return status;
 
     status = sas_virtual_phy_max_conns_per_lcc(encl_type, &max_conns_per_lcc, s->side);
+    if (status != FBE_STATUS_OK)
+        return status;
+
+    status = sas_virtual_phy_max_single_lane_conns_per_port(encl_type, &max_single_lane_port_conn_count, s->side);
     if (status != FBE_STATUS_OK)
         return status;
 
@@ -6932,17 +6957,27 @@ static fbe_status_t emc_stat_page_sas_conn_info_elem_get_attach_sas_addr(termina
                 case CONN_IS_DOWNSTREAM:
                     // Indicates the connector belongs to the extension port
                     // FIXME
-                    //status = terminator_get_downstream_wideport_sas_address(virtual_phy_handle, attached_sas_address);
-                    *attached_sas_address = ((SCSISESState *)(s->ses_dev))->expansion_port_attached_sas_address;
+                    if (!(position % max_conns_per_port)) {
+                        *attached_phy_id = 0xff;
+                    } else {
+                        *attached_phy_id = position % max_conns_per_port - 1;
+                    }
+                    *attached_sas_address = ses_dev->expansion_port_attached_sas_address;
                     *sub_encl_id = FBE_ESES_SUBENCL_SIDE_ID_INVALID;
+
                     break;
                 case CONN_IS_UPSTREAM:
                     // Indicates the connector belongs to the primary port
-                    // fixme
                     //status = terminator_get_upstream_wideport_sas_address(virtual_phy_handle, attached_sas_address);
                     //*attached_sas_address = 0x351866d000000000;
-                    *attached_sas_address = ((SCSISESState *)(s->ses_dev))->primary_port_attached_sas_address;
+                    if (!(position % max_conns_per_port)) {
+                        *attached_phy_id = 0xff;
+                    } else {
+                        *attached_phy_id = position % max_conns_per_port - 1 + max_single_lane_port_conn_count;
+                    }
+                    *attached_sas_address = ses_dev->primary_port_attached_sas_address;
                     *sub_encl_id = FBE_ESES_SUBENCL_SIDE_ID_INVALID;
+
                     break;
                 case CONN_IS_RANGE0:
                     if((encl_type == FBE_SAS_ENCLOSURE_TYPE_VOYAGER_ICM) ||
@@ -7144,6 +7179,8 @@ fbe_status_t emc_encl_stat_diag_page_build_sas_conn_inf_elems(terminator_sas_vir
     uint8_t num_sas_conn_info_elem_per_lcc = 0;
     terminator_sp_id_t spid;
     uint8_t max_conns_per_port;
+    uint8_t max_single_lane_port_conn_count;
+    //uint8_t phy_id;
     terminator_conn_map_range_t return_range = CONN_IS_ILLEGAL; 
 
     /* get the enclosure type thru the virtual_phy_handle */
@@ -7157,25 +7194,61 @@ fbe_status_t emc_encl_stat_diag_page_build_sas_conn_inf_elems(terminator_sas_vir
     if (status != FBE_STATUS_OK)
         return status;
 
+    status = sas_virtual_phy_max_single_lane_conns_per_port(encl_type, &max_single_lane_port_conn_count, s->side);
+    if (status != FBE_STATUS_OK)
+        return status;
+
+    status =  fbe_terminator_api_get_sp_id(s, &spid);
+
     sas_conn_inf_elem_ptr = (ses_sas_conn_info_elem_struct *)(sas_conn_elem_start_ptr);
-    for(i=0;i < num_sas_conn_info_elem_per_lcc; i++)
+
+    SCSIDevice *d = (SCSIDevice *)(s->ses_dev);
+    SCSIBus *bus = scsi_bus_from_device(d);
+    BusChild *kid;
+    SCSISESState * peer_ses = NULL;
+    QTAILQ_FOREACH_REVERSE(kid, &bus->qbus.children, ChildrenHead, sibling){
+        DeviceState *qdev = kid->child;
+        SCSIDevice *dev = SCSI_DEVICE(qdev);
+
+        if (dev->type == TYPE_ENCLOSURE && ((SCSISESState *)dev)->side != ((SCSISESState *)d)->side)
+        {
+            peer_ses = (SCSISESState *)dev;
+            break;
+        }
+    }
+    if (!peer_ses) {
+        return FBE_STATUS_GENERIC_FAILURE;
+    }
+
+    for(i = 0; i < num_sas_conn_info_elem_per_lcc; i++)
     {
         status = emc_stat_page_sas_conn_info_elem_get_local_elem_index(s, i, &sas_conn_inf_elem_ptr->conn_elem_index);
         if (status != FBE_STATUS_OK)
             return status;
-        status = emc_stat_page_sas_conn_info_elem_get_attach_sas_addr(s, i, 
+        status = emc_stat_page_sas_conn_info_elem_get_attach_sas_addr(s, i, s->ses_dev,
                                                                         sas_conn_inf_elem_ptr->conn_elem_index, 
                                                                         &sas_conn_inf_elem_ptr->conn_id,
                                                                         &sas_conn_inf_elem_ptr->attached_sas_address,
-                                                                        &sas_conn_inf_elem_ptr->attached_sub_encl_id);
+                                                                        &sas_conn_inf_elem_ptr->attached_sub_encl_id,
+                                                                        &sas_conn_inf_elem_ptr->attached_phy_id);
         if (status != FBE_STATUS_OK)
             return status;
         // convert to big endian 
         sas_conn_inf_elem_ptr->attached_sas_address = bswap64(sas_conn_inf_elem_ptr->attached_sas_address);
+        sas_conn_inf_elem_ptr->port_type = 0x3;
+        sas_conn_inf_elem_ptr->enable = 0x1;
+#if 0
+        if (i % max_conns_per_port) {
+            status = sas_virtual_phy_get_individual_conn_to_phy_mapping(i % max_conns_per_port - 1, sas_conn_inf_elem_ptr->conn_id, &phy_id, encl_type, s->side);
+            sas_conn_inf_elem_ptr->attached_phy_id = phy_id;
+            if (status != FBE_STATUS_OK)
+                return status;
+        } else 
+            sas_conn_inf_elem_ptr->attached_phy_id = 0xFF;
+#endif
         sas_conn_inf_elem_ptr++;
     }
     *num_sas_conn_info_elem += num_sas_conn_info_elem_per_lcc;
-    status =  fbe_terminator_api_get_sp_id(s, &spid);
 
     if(config_page_element_exists(s,
                                 SES_SUBENCL_TYPE_LCC,
@@ -7191,20 +7264,28 @@ fbe_status_t emc_encl_stat_diag_page_build_sas_conn_inf_elems(terminator_sas_vir
     //Assume the peer LCC is not installed and fill its connectors
     // For now all peer lCC connector related info is hardcoded.
 
-        for(i=0;i < num_sas_conn_info_elem_per_lcc; i++)
+        for(i = 0; i < num_sas_conn_info_elem_per_lcc; i++)
         {
             status = emc_stat_page_sas_conn_info_elem_get_peer_elem_index(s, i, &sas_conn_inf_elem_ptr->conn_elem_index);
             if (status != FBE_STATUS_OK)
                 return status;
 
-            sas_conn_inf_elem_ptr->attached_sas_address = FBE_SAS_ADDRESS_INVALID;
+            //sas_conn_inf_elem_ptr->attached_sas_address = FBE_SAS_ADDRESS_INVALID;
+            status = emc_stat_page_sas_conn_info_elem_get_attach_sas_addr(s, i, peer_ses,
+                                                  sas_conn_inf_elem_ptr->conn_elem_index,
+                                                  &sas_conn_inf_elem_ptr->conn_id,
+                                                  &sas_conn_inf_elem_ptr->attached_sas_address,
+                                                  &sas_conn_inf_elem_ptr->attached_sub_encl_id,
+                                                  &sas_conn_inf_elem_ptr->attached_phy_id);
             
+            sas_conn_inf_elem_ptr->attached_sas_address = bswap64(sas_conn_inf_elem_ptr->attached_sas_address);
+            sas_conn_inf_elem_ptr->port_type = 0x3;
+            sas_conn_inf_elem_ptr->enable = 0x1;
             terminator_map_position_max_conns_to_range_conn_id(encl_type, 
                                                        i, 
                                                        max_conns_per_port, 
                                                        &return_range,   // Not used here.
                                                        &sas_conn_inf_elem_ptr->conn_id);
-
             sas_conn_inf_elem_ptr++;
         }
         *num_sas_conn_info_elem += num_sas_conn_info_elem_per_lcc;
@@ -7344,81 +7425,81 @@ fbe_status_t emc_encl_stat_diag_page_build_trace_buffer_inf_elems(terminator_sas
     ses_trace_buf_info_elem_struct *trace_buffer_inf_elem_ptr = NULL; 
     terminator_vp_eses_page_info_t *vp_eses_page_info;
     terminator_sp_id_t spid;
+    uint8_t i;
 
     vp_eses_page_info = &s->eses_page_info;
 
     *num_trace_buffer_info_elem = TERMINATOR_EMC_PAGE_NUM_TRACE_BUF_INFO_ELEMS;
 
     trace_buffer_inf_elem_ptr = (ses_trace_buf_info_elem_struct *)(trace_buffer_elem_start_ptr);
-    memset(trace_buffer_inf_elem_ptr, 0, sizeof(ses_trace_buf_info_elem_struct));
-
+//    memset(trace_buffer_inf_elem_ptr, 0, sizeof(ses_trace_buf_info_elem_struct));
     status =  fbe_terminator_api_get_sp_id(s, &spid);
+    for(i = 0; i < TERMINATOR_EMC_PAGE_NUM_TRACE_BUF_INFO_ELEMS; i++)
+    {
 
-    status = eses_get_buf_id_by_subencl_info(vp_eses_page_info, 
-                                             SES_SUBENCL_TYPE_LCC, 
-                                             spid, 
-                                             SES_BUF_TYPE_ACTIVE_TRACE, 
-                                             FALSE,
-                                             0,
-                                             FALSE,
-                                             0,
-                                             FALSE,
-                                             0, 
-                                             &trace_buffer_inf_elem_ptr->buf_id);
+		memset(trace_buffer_inf_elem_ptr, 0, sizeof(ses_trace_buf_info_elem_struct));
 
-    if (status != FBE_STATUS_OK)
-        return status;
-    
-    trace_buffer_inf_elem_ptr->buf_action =  FBE_ESES_TRACE_BUF_ACTION_STATUS_ACTIVE;
+		status = eses_get_buf_id_by_subencl_info(vp_eses_page_info,
+												 SES_SUBENCL_TYPE_LCC,
+												 spid,
+												 SES_BUF_TYPE_SAVED_TRACE,
+												 FALSE,
+												 0,
+												 TRUE,
+												 i,
+												 FALSE,
+												 0,
+												 &trace_buffer_inf_elem_ptr->buf_id);
 
-    status = config_page_get_start_elem_index_in_stat_page(s,
-                                                            SES_SUBENCL_TYPE_LCC,
-                                                            spid, 
-                                                            SES_ELEM_TYPE_SAS_EXP, 
-                                                            FALSE,
-                                                            0,
-                                                            FALSE,
-                                                            NULL,
-                                                            &trace_buffer_inf_elem_ptr->elem_index);
-    if (status != FBE_STATUS_OK)
-        return status;
-   
-    trace_buffer_inf_elem_ptr++;
-    memset(trace_buffer_inf_elem_ptr, 0, sizeof(ses_trace_buf_info_elem_struct));
-    
-    status = eses_get_buf_id_by_subencl_info(vp_eses_page_info, 
-                                             SES_SUBENCL_TYPE_LCC, 
-                                             spid, 
-                                             SES_BUF_TYPE_SAVED_TRACE, 
-                                             FALSE,
-                                             0,
-                                             FALSE,
-                                             0,
-                                             FALSE,
-                                             0, 
-                                             &trace_buffer_inf_elem_ptr->buf_id);
-    if (status != FBE_STATUS_OK)
-        return status;
-    
-    trace_buffer_inf_elem_ptr->buf_action =  FBE_ESES_TRACE_BUF_ACTION_STATUS_CLIENT_INIT_SAVE_BUF;
+		if (status != FBE_STATUS_OK)
+			return status;
 
+		trace_buffer_inf_elem_ptr->buf_action = FBE_ESES_TRACE_BUF_ACTION_STATUS_UNUSED_BUF;
 
-    status = config_page_get_start_elem_index_in_stat_page(s,
-                                                            SES_SUBENCL_TYPE_LCC,
-                                                            spid, 
-                                                            SES_ELEM_TYPE_SAS_EXP, 
-                                                            FALSE,
-                                                            0,
-                                                            FALSE,
-                                                            NULL,
-                                                            &trace_buffer_inf_elem_ptr->elem_index);
-   if (status != FBE_STATUS_OK) 
-       return status;
+		status = config_page_get_start_elem_index_in_stat_page(s,
+																SES_SUBENCL_TYPE_LCC,
+																spid,
+																SES_ELEM_TYPE_SAS_EXP,
+																FALSE,
+																0,
+																FALSE,
+																NULL,
+																&trace_buffer_inf_elem_ptr->elem_index);
+		if (status != FBE_STATUS_OK)
+			return status;
 
+		trace_buffer_inf_elem_ptr++;
 
-    *trace_buffer_elem_end_ptr = (uint8_t *)(trace_buffer_inf_elem_ptr+1);
+    }
+
+    *trace_buffer_elem_end_ptr = (uint8_t *)(trace_buffer_inf_elem_ptr);
 
     return( FBE_STATUS_OK);          
+}
+
+
+fbe_status_t emc_encl_stat_diag_page_build_encl_time_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *trace_buffer_elem_start_ptr, uint8_t **trace_buffer_elem_end_ptr)
+{
+    *trace_buffer_elem_end_ptr = trace_buffer_elem_start_ptr;
+    ses_encl_time_elem_struct* p = (ses_encl_time_elem_struct*)trace_buffer_elem_start_ptr;
+    p->day = 21;
+    p->millisec  = bswap32(874343u);
+    p->month = 1;
+    p->time_zone = 96;
+    p->year = 0;
+    p->valid = 1;
+
+    *trace_buffer_elem_end_ptr += sizeof(ses_encl_time_elem_struct);
+    return FBE_STATUS_OK;
+}
+
+fbe_status_t emc_encl_stat_diag_page_build_drive_sled_slot_info_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *ps_info_elem_start_ptr,
+                                                                     uint8_t                  **ps_info_elem_end_ptr,
+                                                                     uint8_t                   *num_ps_info_elem)
+{
+    *ps_info_elem_end_ptr = ps_info_elem_start_ptr;
+    *num_ps_info_elem = 0;
+    return FBE_STATUS_OK;
 }
 
 fbe_status_t emc_encl_stat_diag_page_build_ps_info_elems(terminator_sas_virtual_phy_info_t *s, uint8_t *ps_info_elem_start_ptr,
@@ -7455,9 +7536,6 @@ fbe_status_t emc_encl_stat_diag_page_build_ps_info_elems(terminator_sas_virtual_
         RETURN_ON_ERROR_STATUS;
 
 
-        status =  fbe_terminator_api_get_sp_id(s, &spid);
-        if (status != FBE_STATUS_OK)
-            return status;
 
         if (status == FBE_STATUS_OK)
         {
@@ -7580,8 +7658,6 @@ fbe_status_t emc_encl_stat_diag_page_build_general_info_enclosure_elems(terminat
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     ses_general_info_elem_enclosure_struct* temp_info_p = (ses_general_info_elem_enclosure_struct*) (general_info_elem_start_ptr);
 
-        if (status != FBE_STATUS_OK)
-            return status;
 
     status =  fbe_terminator_api_get_sp_id(s, &spid);
     if (s->enclosure_type == FBE_SAS_ENCLOSURE_TYPE_TABASCO)
@@ -7702,12 +7778,12 @@ fbe_status_t emc_encl_stat_diag_page_build_general_info_expander_elems(terminato
     fbe_status_t status = FBE_STATUS_GENERIC_FAILURE;
     ses_general_info_elem_expander_struct * general_info_elem_p = NULL;
     //terminator_vp_eses_page_info_t *vp_eses_page_info;
-    uint8_t reset_reason  = 0;
+    uint8_t reset_reason  = 0x03;
     terminator_sp_id_t spid;
 
     //vp_eses_page_info = &s->eses_page_info;
 
-    *num_general_info_elem = 1;
+    *num_general_info_elem = 2;
 
     general_info_elem_p = (ses_general_info_elem_expander_struct *)(general_info_elem_start_ptr);
     memset(general_info_elem_p, 0, sizeof(ses_general_info_elem_expander_struct));
@@ -7719,6 +7795,22 @@ fbe_status_t emc_encl_stat_diag_page_build_general_info_expander_elems(terminato
                                                            SES_SUBENCL_TYPE_LCC,
                                                            spid, 
                                                            SES_ELEM_TYPE_SAS_EXP, 
+                                                           FALSE,
+                                                           0,
+                                                           FALSE,
+                                                           NULL,
+                                                           &general_info_elem_p->elem_index);
+    if (status != FBE_STATUS_OK)
+        return status;
+
+    general_info_elem_p++;
+    memset(general_info_elem_p, 0, sizeof(ses_general_info_elem_expander_struct));
+    general_info_elem_p->reset_reason =  0;
+
+    status = config_page_get_start_elem_index_in_stat_page(s,
+                                                           SES_SUBENCL_TYPE_LCC,
+                                                           1 - spid,
+                                                           SES_ELEM_TYPE_SAS_EXP,
                                                            FALSE,
                                                            0,
                                                            FALSE,
